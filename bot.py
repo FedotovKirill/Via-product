@@ -687,7 +687,17 @@ async def check_user_issues(client, redmine, user_cfg):
             # при «Ожидается решение»).
             # Только в личную комнату.
             new_jrnls, max_id = detect_new_journals(issue, journals)
-            if new_jrnls and iid in sent and should_notify(user_cfg, "issue_updated"):
+
+            # ── Защита от спама старыми журналами ──────────────
+            # Если задачи НЕТ в journals state — значит мы видим
+            # её впервые в контексте журналов. Запоминаем max_id
+            # БЕЗ отправки, чтобы не слать комменты месячной давности.
+            if iid not in journals:
+                if max_id > 0:
+                    journals[iid] = {"last_journal_id": max_id}
+                    jour_ch = True
+                    logger.debug(f"📝 #{iid}: инициализация journal_id={max_id} (пропуск)")
+            elif new_jrnls and iid in sent and should_notify(user_cfg, "issue_updated"):
                 _skip_st = old_status is not None
                 descs = [d for d in (describe_journal(j, skip_status=_skip_st) for j in new_jrnls) if d]
                 if descs:
@@ -696,10 +706,15 @@ async def check_user_issues(client, redmine, user_cfg):
                         combined = f"<em>...и ещё {len(descs) - 5}</em><br/>" + combined
                     await send_safe(client, issue, room, "issue_updated", extra_text=combined)
 
-            # Обновляем last_journal_id (независимо от типа уведомления)
-            if max_id > journals.get(iid, {}).get("last_journal_id", 0):
-                journals[iid] = {"last_journal_id": max_id}
-                jour_ch = True
+                # Обновляем last_journal_id
+                if max_id > journals.get(iid, {}).get("last_journal_id", 0):
+                    journals[iid] = {"last_journal_id": max_id}
+                    jour_ch = True
+            else:
+                # Нет новых журналов или не нужно уведомлять — просто обновляем ID
+                if max_id > journals.get(iid, {}).get("last_journal_id", 0):
+                    journals[iid] = {"last_journal_id": max_id}
+                    jour_ch = True
 
         except Exception as e:
             logger.error(f"❌ Ошибка обработки #{issue.id} (user {uid}): {e}", exc_info=True)
