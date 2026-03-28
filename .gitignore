@@ -30,3 +30,7 @@ __pycache__/
 Thumbs.db
 state_*.json
 bot.log
+
+# State-файлы (JSON)
+data/*.json
+!data/.gitkeep
