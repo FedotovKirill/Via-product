@@ -1,15 +1,14 @@
 """
 Matrix-клиент: подключение, отправка сообщений.
 
-Обёртка над nio.AsyncClient с retry-логикой и форматированием HTML.
+Обёртка над nio.AsyncClient. Отправка через matrix_send.room_send_with_retry.
 Использует access_token (без пароля).
 """
 
-import asyncio
 import logging
 import re
 
-from nio import AsyncClient, RoomSendError
+from nio import AsyncClient
 
 from config import (
     MATRIX_HOMESERVER,
@@ -17,16 +16,9 @@ from config import (
     MATRIX_USER_ID,
     MATRIX_DEVICE_ID,
 )
+from matrix_send import room_send_with_retry, MAX_RETRIES
 
 logger = logging.getLogger("redmine_bot")
-
-# ═══════════════════════════════════════════════════════════════
-# КОНСТАНТЫ
-# ═══════════════════════════════════════════════════════════════
-
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # секунды
-
 
 # ═══════════════════════════════════════════════════════════════
 # КЛИЕНТ
@@ -52,7 +44,7 @@ async def get_client() -> AsyncClient:
 
     logger.info(f"✅ Matrix: клиент создан для {MATRIX_USER_ID}")
     _client = client
-    return _client
+    return client
 
 
 async def close_client():
@@ -88,22 +80,9 @@ async def send_message(room_id: str, html: str, text: str = "") -> bool:
         "formatted_body": html,
     }
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = await client.room_send(
-                room_id=room_id,
-                message_type="m.room.message",
-                content=content,
-            )
-            if isinstance(resp, RoomSendError):
-                logger.error(f"❌ Matrix send error (attempt {attempt}): {resp}")
-            else:
-                return True
-        except Exception as e:
-            logger.error(f"❌ Matrix exception (attempt {attempt}): {e}")
-
-        if attempt < MAX_RETRIES:
-            await asyncio.sleep(RETRY_DELAY)
-
-    logger.error(f"❌ Не удалось отправить в {room_id} после {MAX_RETRIES} попыток")
-    return False
+    try:
+        await room_send_with_retry(client, room_id, content)
+        return True
+    except Exception as e:
+        logger.error(f"❌ Не удалось отправить в {room_id} после {MAX_RETRIES} попыток: {e}")
+        return False

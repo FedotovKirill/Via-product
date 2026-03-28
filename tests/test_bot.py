@@ -28,6 +28,7 @@ os.environ.setdefault("BOT_TIMEZONE", "Europe/Moscow")
 os.environ.setdefault("USERS", '[{"redmine_id": 1972, "room": "!test:server", "notify": ["all"]}]')
 
 import bot
+import matrix_send
 from tests.conftest import MockIssue, MockJournal
 
 
@@ -511,8 +512,8 @@ class TestRoomSendWithRetry:
         client = AsyncMock()
         client.room_send = AsyncMock(side_effect=[mock_err, mock_err, success])
 
-        with patch("bot.asyncio.sleep", new_callable=AsyncMock):
-            await bot.room_send_with_retry(
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
+            await matrix_send.room_send_with_retry(
                 client, "!room:server", {"msgtype": "m.text", "body": "x"}
             )
 
@@ -531,13 +532,13 @@ class TestRoomSendWithRetry:
         client = AsyncMock()
         client.room_send = AsyncMock(return_value=mock_err)
 
-        with patch("bot.asyncio.sleep", new_callable=AsyncMock):
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(RuntimeError, match="Matrix room_send error"):
-                await bot.room_send_with_retry(
+                await matrix_send.room_send_with_retry(
                     client, "xroom:server", {"msgtype": "m.text", "body": "x"}
                 )
 
-        assert client.room_send.call_count == bot.MATRIX_SEND_MAX_RETRIES
+        assert client.room_send.call_count == matrix_send.MAX_RETRIES
 
     @pytest.mark.asyncio
     async def test_network_exception_retries_then_raises(self):
@@ -545,13 +546,13 @@ class TestRoomSendWithRetry:
         client = AsyncMock()
         client.room_send = AsyncMock(side_effect=OSError("connection reset"))
 
-        with patch("bot.asyncio.sleep", new_callable=AsyncMock):
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(OSError, match="connection reset"):
-                await bot.room_send_with_retry(
+                await matrix_send.room_send_with_retry(
                     client, "!r:s", {"msgtype": "m.text", "body": "x"}
                 )
 
-        assert client.room_send.call_count == bot.MATRIX_SEND_MAX_RETRIES
+        assert client.room_send.call_count == matrix_send.MAX_RETRIES
 
 
 class TestSendMatrixMessage:
@@ -643,13 +644,13 @@ class TestSendMatrixMessage:
         client = AsyncMock()
         client.room_send = AsyncMock(return_value=mock_error)
 
-        with patch("bot.asyncio.sleep", new_callable=AsyncMock):
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(RuntimeError, match="Matrix room_send error"):
                 await bot.send_matrix_message(
                     client, simple_issue, "xroom:server", "new"
                 )
 
-        assert client.room_send.call_count == bot.MATRIX_SEND_MAX_RETRIES
+        assert client.room_send.call_count == matrix_send.MAX_RETRIES
 
 
 class TestSendSafe:
@@ -660,10 +661,10 @@ class TestSendSafe:
         """send_safe НЕ пробрасывает исключения — логирует."""
         client = AsyncMock()
         client.room_send = AsyncMock(side_effect=Exception("Network error"))
-        with patch("bot.asyncio.sleep", new_callable=AsyncMock):
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             # Не должен кинуть исключение (несколько попыток room_send)
             await bot.send_safe(client, simple_issue, "!room:server", "new")
-        assert client.room_send.call_count == bot.MATRIX_SEND_MAX_RETRIES
+        assert client.room_send.call_count == matrix_send.MAX_RETRIES
 
     @pytest.mark.asyncio
     async def test_send_safe_success(self, mock_matrix_client, simple_issue):

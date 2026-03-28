@@ -111,7 +111,7 @@ class TestSendMessage:
         )
         mc._client = mock_client
 
-        with patch("matrix_client.RETRY_DELAY", 0):
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             result = await send_message("!room:test", "test")
 
         assert result is True
@@ -123,7 +123,7 @@ class TestSendMessage:
         mock_client.room_send = AsyncMock(side_effect=Exception("fail"))
         mc._client = mock_client
 
-        with patch("matrix_client.RETRY_DELAY", 0):
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             result = await send_message("!room:test", "test")
 
         assert result is False
@@ -132,13 +132,15 @@ class TestSendMessage:
     @pytest.mark.asyncio
     async def test_room_send_error_retries(self):
         error_resp = mock_nio.RoomSendError()
+        error_resp.message = "temporary"
+        error_resp.status_code = 429
         mock_client = AsyncMock()
         mock_client.room_send = AsyncMock(
             side_effect=[error_resp, "ok"]
         )
         mc._client = mock_client
 
-        with patch("matrix_client.RETRY_DELAY", 0):
+        with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             result = await send_message("!room:test", "test")
 
         assert result is True

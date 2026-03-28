@@ -38,9 +38,10 @@ _SRC_DIR = Path(__file__).resolve().parent / "src"
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 from utils import safe_html
+from matrix_send import room_send_with_retry, MAX_RETRIES
 
 from dotenv import load_dotenv
-from nio import AsyncClient, RoomSendError
+from nio import AsyncClient
 from redminelib import Redmine
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -99,9 +100,8 @@ CHECK_INTERVAL = 90  # FIX-4: увеличен с 30 (цикл занимает 
 # Через сколько секунд напоминать о «Информация предоставлена»
 REMINDER_AFTER = 3600
 
-# Matrix: повторы при временных сбоях (см. src/matrix_client.py)
-MATRIX_SEND_MAX_RETRIES = 3
-MATRIX_SEND_RETRY_BASE_SEC = 1.0
+# Обратная совместимость тестов (реальные константы — в matrix_send.py)
+MATRIX_SEND_MAX_RETRIES = MAX_RETRIES
 
 # --- Статусы Redmine ---
 STATUS_NEW           = "Новая"
@@ -310,51 +310,6 @@ NOTIFICATION_TYPES = {
     "issue_updated": ("📝", "Задача обновлена"),
     "reopened":      ("🔁", "Открыто повторно"),
 }
-
-
-async def room_send_with_retry(client, room_id, content):
-    """
-    Отправка m.room.message с повторными попытками и экспоненциальной паузой.
-
-    При ошибке (RoomSendError, исключение сети) логирует warning и повторяет
-    до MATRIX_SEND_MAX_RETRIES раз. После исчерпания попыток пробрасывает
-    последнюю ошибку.
-    """
-    last_err = None
-
-    for attempt in range(1, MATRIX_SEND_MAX_RETRIES + 1):
-        try:
-            resp = await client.room_send(
-                room_id=room_id, message_type="m.room.message", content=content
-            )
-            if isinstance(resp, RoomSendError):
-                last_err = RuntimeError(
-                    f"Matrix room_send error: {resp.message} "
-                    f"(status_code={resp.status_code}, room={room_id})"
-                )
-            else:
-                return resp
-        except Exception as e:
-            last_err = e
-
-        if attempt >= MATRIX_SEND_MAX_RETRIES:
-            break
-
-        delay = MATRIX_SEND_RETRY_BASE_SEC * (2 ** (attempt - 1))
-        logger.warning(
-            "Matrix send failed (%s/%s): %s; retry in %.1fs",
-            attempt,
-            MATRIX_SEND_MAX_RETRIES,
-            last_err,
-            delay,
-        )
-        await asyncio.sleep(delay)
-
-    if last_err is not None:
-        raise last_err
-    raise RuntimeError(
-        f"Matrix room_send failed after {MATRIX_SEND_MAX_RETRIES} attempts (room={room_id})"
-    )
 
 
 async def send_matrix_message(client, issue, room_id, notification_type="info", extra_text=""):
