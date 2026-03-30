@@ -150,7 +150,9 @@ cp .env.example .env
 nano .env   # заполнить все переменные (см. раздел «Настройка .env»)
 ```
 
-`master_key.txt` монтируется в контейнер `admin` как `/run/secrets/app_master_key` и используется для AES-GCM шифрования секретов в БД.
+`master_key.txt` — локальный dev-вариант хранения ключа. Для production используйте secret manager (Docker/K8s secret) или защищённый канал передачи `APP_MASTER_KEY_FILE`.
+
+Подробности по хранению секретов: `docs/secrets-storage.md`.
 
 ### 3. Настройка пользователей и маршрутизации
 
@@ -294,11 +296,26 @@ REDMINE_API_KEY=your_redmine_api_key
 | `RESET_COOLDOWN_SECONDS` | Ограничение частоты reset-запросов |
 | `COOKIE_SECURE` | Secure-флаг cookie (`1` для HTTPS) |
 | `APP_MASTER_KEY_FILE` | Путь к master key (32 байта) |
+| `SHOW_DEV_TOKENS` | Показ dev reset-токена в UI (только dev/test) |
+
+### SMTP reset
+
+| Переменная | Назначение |
+|------------|------------|
+| `SMTP_HOST` | SMTP сервер |
+| `SMTP_PORT` | SMTP порт |
+| `SMTP_USERNAME` | SMTP логин |
+| `SMTP_PASSWORD` | SMTP пароль |
+| `SMTP_SENDER` | Email отправителя |
+| `SMTP_USE_TLS` / `SMTP_USE_STARTTLS` | Режим транспортной защиты |
+| `SMTP_MOCK` | dev/test режим без реальной отправки (в production должен быть `0`) |
+| `SMTP_HEALTH_TTL_SECONDS` | TTL кэша проверки SMTP |
 
 ### Health endpoints
 
 - `GET /health/live` — процесс поднят.
 - `GET /health/ready` — доступны БД и master key.
+- `GET /health/smtp` — состояние SMTP (`ok/degraded`), не блокирует запуск приложения.
 
 ### Recovery
 
@@ -307,6 +324,9 @@ REDMINE_API_KEY=your_redmine_api_key
 ```bash
 python scripts/reset_admin_password.py --email admin@example.com --password 'NewStrongPassword123'
 ```
+
+Полный регламент отката: `docs/rollback-runbook.md`.
+Smoke-чеклист UI перед merge: `docs/ui-smoke-checklist.md`.
 
 ### Расписание и DND (из Postgres)
 

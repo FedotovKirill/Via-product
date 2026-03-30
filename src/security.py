@@ -77,10 +77,12 @@ def load_master_key() -> bytes:
     """
     p = os.getenv("APP_MASTER_KEY_FILE", "/run/secrets/app_master_key")
     fp = Path(p)
-    if fp.exists():
+    key = b""
+    if fp.exists() and fp.is_file():
         raw = fp.read_text(encoding="utf-8").strip()
         key = raw.encode("utf-8")
-    else:
+    # Fallback for local/dev when file secret is not available or is mis-mounted.
+    if not key:
         raw = (os.getenv("APP_MASTER_KEY") or "").strip()
         key = raw.encode("utf-8")
     if len(key) != 32:

@@ -94,8 +94,8 @@ services:
       ]
     ports:
       - "${ADMIN_PORT:-8080}:8080"
-    volumes:
-      - ./master_key.txt:/run/secrets/app_master_key:ro
+    # Для production предпочтительно передавать ключ через secret manager
+    # (Docker/K8s secrets) или env APP_MASTER_KEY, а не через bind-файл.
     working_dir: /app
     user: bot
 

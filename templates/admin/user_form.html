@@ -2,7 +2,15 @@
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 <h1>{{ title }}</h1>
+<div class="card">
 <form method="post" action="{% if u %}/users/{{ u.id }}{% else %}/users{% endif %}">
+  <label for="display_name">Имя (как показывать в панели)</label>
+  <input type="text" id="display_name" name="display_name"
+    value="{{ u.display_name if u and u.display_name else '' }}" placeholder="Иван Петров"/>
+  <label for="department">Отдел</label>
+  <input type="text" id="department" name="department"
+    value="{{ u.department if u and u.department else '' }}" placeholder="Сопровождение"/>
+
   <label for="redmine_id">Redmine user ID</label>
   <input type="number" id="redmine_id" name="redmine_id" required
     value="{{ u.redmine_id if u else '' }}"/>
@@ -29,8 +37,14 @@
       const inp = document.getElementById('redmine_id');
       if (!sel || !inp) return;
       sel.addEventListener('change', function () {
-        const v = sel.value;
+        const option = sel.options[sel.selectedIndex];
+        const v = option ? option.value : '';
         if (v) inp.value = v;
+        const displayName = option ? option.getAttribute('data-display-name') : '';
+        const displayInput = document.getElementById('display_name');
+        if (displayInput && displayName && !displayInput.value.trim()) {
+          displayInput.value = displayName;
+        }
       });
     });
   </script>
@@ -38,14 +52,45 @@
   <label for="room">Matrix room ID</label>
   <input type="text" id="room" name="room" required
     value="{{ u.room if u else '' }}" placeholder="!xxx:server"/>
-  <label for="notify_json">notify (JSON-массив)</label>
-  <textarea id="notify_json" name="notify_json" rows="3">{{ notify_json }}</textarea>
-  <label for="work_hours">work_hours (опционально)</label>
-  <input type="text" id="work_hours" name="work_hours"
-    value="{{ u.work_hours if u and u.work_hours else '' }}" placeholder="09:00-18:00"/>
-  <label for="work_days_json">work_days (JSON-массив дней 0=Пн…6=Вс, опционально)</label>
-  <textarea id="work_days_json" name="work_days_json" rows="2"
-    placeholder='[0,1,2,3,4]'>{% if u and u.work_days is not none %}{{ u.work_days }}{% endif %}</textarea>
+
+  <fieldset style="margin-top:1rem;">
+    <legend>Типы уведомлений</legend>
+    <label><input type="radio" name="notify_preset" value="all" {% if notify_preset == "all" %}checked{% endif %}/> Все уведомления</label>
+    <label><input type="radio" name="notify_preset" value="new_only" {% if notify_preset == "new_only" %}checked{% endif %}/> Только новые задачи</label>
+    <label><input type="radio" name="notify_preset" value="overdue_only" {% if notify_preset == "overdue_only" %}checked{% endif %}/> Только просроченные</label>
+    <label><input type="radio" name="notify_preset" value="custom" {% if notify_preset == "custom" %}checked{% endif %}/> Кастомный набор</label>
+    <div id="notify_custom_box" style="margin-top:.5rem; padding:.5rem; border:1px solid var(--border); border-radius:.5rem;">
+      <span class="muted">В расширенном режиме выберите типы:</span>
+      <div style="display:flex; flex-wrap:wrap; gap:.75rem; margin-top:.5rem;">
+        {% for key, label in [
+          ("new", "Новая задача"), ("info", "Информация предоставлена"), ("reminder", "Напоминание"),
+          ("overdue", "Просроченная"), ("status_change", "Смена статуса"), ("issue_updated", "Обновление"), ("reopened", "Переоткрыта")
+        ] %}
+          <label style="margin:0;"><input type="checkbox" name="notify_values" value="{{ key }}" {% if key in notify_selected %}checked{% endif %}/> {{ label }}</label>
+        {% endfor %}
+      </div>
+      <input type="hidden" name="notify_json" value="{{ notify_json }}"/>
+    </div>
+  </fieldset>
+
+  <label for="work_hours_from">Рабочие часы</label>
+  <div style="display:flex; gap:.5rem; align-items:center;">
+    <input type="time" id="work_hours_from" name="work_hours_from" value="{% if u and u.work_hours and '-' in u.work_hours %}{{ u.work_hours.split('-')[0] }}{% endif %}"/>
+    <span>—</span>
+    <input type="time" id="work_hours_to" name="work_hours_to" value="{% if u and u.work_hours and '-' in u.work_hours %}{{ u.work_hours.split('-')[1] }}{% endif %}"/>
+  </div>
+
+  <fieldset style="margin-top:1rem;">
+    <legend>Рабочие дни</legend>
+    <div style="display:flex; flex-wrap:wrap; gap:.75rem;">
+      {% set _days = (u.work_days if u and u.work_days is not none else [0,1,2,3,4]) %}
+      {% for idx, label in [(0,"Пн"),(1,"Вт"),(2,"Ср"),(3,"Чт"),(4,"Пт"),(5,"Сб"),(6,"Вс")] %}
+        <label style="margin:0;"><input type="checkbox" name="work_days_values" value="{{ idx }}" {% if idx in _days %}checked{% endif %}/> {{ label }}</label>
+      {% endfor %}
+    </div>
+    <input type="hidden" name="work_days_json" value="{% if u and u.work_days is not none %}{{ u.work_days }}{% endif %}"/>
+  </fieldset>
+
   <label style="display:flex; align-items:center; gap:0.5rem; margin-top:1rem;">
     <input type="checkbox" name="dnd" value="on" {% if u and u.dnd %}checked{% endif %}/>
     DND (не беспокоить)
@@ -55,4 +100,18 @@
     <a class="btn btn-ghost" href="/users">Отмена</a>
   </p>
 </form>
+</div>
+<script>
+  (function () {
+    const radios = Array.from(document.querySelectorAll('input[name="notify_preset"]'));
+    const box = document.getElementById('notify_custom_box');
+    function refresh() {
+      const current = radios.find(r => r.checked);
+      if (!box) return;
+      box.style.display = current && current.value === 'custom' ? 'block' : 'none';
+    }
+    radios.forEach(r => r.addEventListener('change', refresh));
+    refresh();
+  })();
+</script>
 {% endblock %}

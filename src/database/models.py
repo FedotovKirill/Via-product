@@ -28,6 +28,8 @@ class BotUser(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     redmine_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    department: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     room: Mapped[str] = mapped_column(Text, nullable=False)
     notify: Mapped[list] = mapped_column(JSONB, nullable=False, default=lambda: ["all"])
     work_hours: Mapped[str | None] = mapped_column(String(32), nullable=True)

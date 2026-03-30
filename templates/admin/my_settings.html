@@ -12,16 +12,43 @@
     <label for="room">Комната Matrix</label>
     <input type="text" id="room" name="room" readonly value="{{ room or '' }}" {% if not room %}placeholder="Не привязана"{% endif %} />
 
-    <label for="notify_json">notify (JSON-массив)</label>
-    <textarea id="notify_json" name="notify_json" rows="3">{{ notify_json }}</textarea>
+    <fieldset style="margin-top:1rem;">
+      <legend>Типы уведомлений</legend>
+      <label><input type="radio" name="notify_preset" value="all" {% if notify_preset == "all" %}checked{% endif %}/> Все уведомления</label>
+      <label><input type="radio" name="notify_preset" value="new_only" {% if notify_preset == "new_only" %}checked{% endif %}/> Только новые задачи</label>
+      <label><input type="radio" name="notify_preset" value="overdue_only" {% if notify_preset == "overdue_only" %}checked{% endif %}/> Только просроченные</label>
+      <label><input type="radio" name="notify_preset" value="custom" {% if notify_preset == "custom" %}checked{% endif %}/> Кастомный набор</label>
+      <div id="notify_custom_box" style="margin-top:.5rem; padding:.5rem; border:1px solid var(--border); border-radius:.5rem;">
+        <span class="muted">Расширенный режим: выберите нужные события.</span>
+        <div style="display:flex; flex-wrap:wrap; gap:.75rem; margin-top:.5rem;">
+          {% for key, label in [
+            ("new", "Новая задача"), ("info", "Информация предоставлена"), ("reminder", "Напоминание"),
+            ("overdue", "Просроченная"), ("status_change", "Смена статуса"), ("issue_updated", "Обновление"), ("reopened", "Переоткрыта")
+          ] %}
+            <label style="margin:0;"><input type="checkbox" name="notify_values" value="{{ key }}" {% if key in notify_selected %}checked{% endif %}/> {{ label }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <input type="hidden" name="notify_json" value="{{ notify_json }}"/>
+    </fieldset>
 
-    <label for="work_hours">work_hours (опционально)</label>
-    <input type="text" id="work_hours" name="work_hours"
-      value="{{ work_hours or '' }}" placeholder="09:00-18:00"/>
+    <label for="work_hours_from">Рабочие часы</label>
+    <div style="display:flex; gap:.5rem; align-items:center;">
+      <input type="time" id="work_hours_from" name="work_hours_from" value="{{ work_hours_from or '' }}"/>
+      <span>—</span>
+      <input type="time" id="work_hours_to" name="work_hours_to" value="{{ work_hours_to or '' }}"/>
+    </div>
+    <input type="hidden" name="work_hours" value="{{ work_hours or '' }}"/>
 
-    <label for="work_days_json">work_days (JSON-массив дней 0=Пн…6=Вс, опционально)</label>
-    <textarea id="work_days_json" name="work_days_json" rows="2"
-      placeholder='[0,1,2,3,4]'>{{ work_days_json }}</textarea>
+    <fieldset style="margin-top:1rem;">
+      <legend>Рабочие дни</legend>
+      <div style="display:flex; flex-wrap:wrap; gap:.75rem;">
+        {% for idx, label in [(0,"Пн"),(1,"Вт"),(2,"Ср"),(3,"Чт"),(4,"Пт"),(5,"Сб"),(6,"Вс")] %}
+          <label style="margin:0;"><input type="checkbox" name="work_days_values" value="{{ idx }}" {% if idx in work_days_selected %}checked{% endif %}/> {{ label }}</label>
+        {% endfor %}
+      </div>
+      <input type="hidden" name="work_days_json" value="{{ work_days_json }}"/>
+    </fieldset>
 
     <label style="display:flex; align-items:center; gap:0.5rem; margin-top:1rem;">
       <input type="checkbox" name="dnd" value="on" {% if dnd %}checked{% endif %}/>
@@ -34,5 +61,18 @@
     </p>
   </form>
 </div>
+<script>
+  (function () {
+    const radios = Array.from(document.querySelectorAll('input[name="notify_preset"]'));
+    const box = document.getElementById('notify_custom_box');
+    function refresh() {
+      const current = radios.find(r => r.checked);
+      if (!box) return;
+      box.style.display = current && current.value === 'custom' ? 'block' : 'none';
+    }
+    radios.forEach(r => r.addEventListener('change', refresh));
+    refresh();
+  })();
+</script>
 {% endblock %}
 

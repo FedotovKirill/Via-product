@@ -1,6 +1,6 @@
 """password auth fields, reset tokens and encrypted app secrets
 
-Revision ID: 0005_password_reset_and_app_secrets
+Revision ID: 0005_auth_secrets
 Revises: 0004_drop_state_import_markers
 Create Date: 2026-03-30
 """
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0005_password_reset_and_app_secrets"
+revision: str = "0005_auth_secrets"
 down_revision: Union[str, None] = "0004_drop_state_import_markers"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

@@ -6,38 +6,71 @@
   <title>{% block title %}Админка бота{% endblock %}</title>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #f4f4f5; color: #18181b; }
-    header { background: #27272a; color: #fafafa; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-    header a { color: #a1a1aa; text-decoration: none; }
-    header a:hover { color: #fafafa; }
-    main { max-width: 56rem; margin: 1.5rem auto; padding: 0 1rem; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid #e4e4e7; }
+    :root {
+      --bg: #f4f4f5;
+      --fg: #18181b;
+      --muted: #71717a;
+      --surface: #ffffff;
+      --border: #e4e4e7;
+      --header: #18181b;
+      --header-link: #d4d4d8;
+      --primary: #2563eb;
+      --danger: #dc2626;
+      --warning-bg: #fef3c7;
+      --warning-border: #f59e0b;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--fg); }
+    header { background: var(--header); color: #fafafa; padding: 0.9rem 1.1rem; display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+    header a { color: var(--header-link); text-decoration: none; font-size: 0.95rem; padding: 0.28rem 0.5rem; border-radius: 6px; }
+    header a:hover { color: #ffffff; }
+    header a.active { color: #fff; background: #27272a; }
+    .header-group { display: flex; align-items: center; gap: .25rem; flex-wrap: wrap; }
+    main { max-width: 70rem; margin: 1.5rem auto; padding: 0 1rem; }
+    h1 { margin: 0 0 0.6rem; font-size: 1.9rem; }
+    h2 { margin: 0 0 0.5rem; font-size: 1.2rem; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+    th, td { text-align: left; padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { background: #fafafa; font-weight: 600; }
-    .btn { display: inline-block; padding: 0.4rem 0.75rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; border: none; cursor: pointer; }
-    .btn-primary { background: #2563eb; color: #fff; }
-    .btn-danger { background: #dc2626; color: #fff; }
-    .btn-ghost { background: #e4e4e7; color: #18181b; }
-    input, textarea { width: 100%; max-width: 40rem; padding: 0.5rem; border: 1px solid #d4d4d8; border-radius: 6px; box-sizing: border-box; }
+    .btn { display: inline-block; padding: 0.46rem 0.9rem; border-radius: 8px; text-decoration: none; font-size: 0.9rem; border: none; cursor: pointer; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-ghost { background: #e4e4e7; color: var(--fg); }
+    .btn-link { background: transparent; color: var(--primary); }
+    input, textarea, select { width: 100%; max-width: 44rem; padding: 0.56rem; border: 1px solid #d4d4d8; border-radius: 8px; background: #fff; }
     label { display: block; margin-top: 0.75rem; font-weight: 500; }
-    .card { background: #fff; padding: 1.25rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .muted { color: #71717a; font-size: 0.9rem; }
-    .error { color: #dc2626; }
+    .card { background: var(--surface); padding: 1.25rem; border-radius: var(--radius); box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+    .stack { display: grid; gap: 1rem; }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    .error { color: var(--danger); }
+    .warning { border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: 8px; padding: 0.8rem 0.9rem; margin-bottom: 1rem; }
+    code { background: #f4f4f5; padding: 0.1rem 0.25rem; border-radius: 4px; }
   </style>
 </head>
 <body>
+{% set _path = request.url.path %}
 <header>
-  <strong><a href="/" style="color:#fafafa;">Matrix bot</a></strong>
-  <a href="/users">Пользователи</a>
-  <a href="/routes/status">Статусы → комнаты</a>
-  <a href="/routes/version">Версии → комнаты</a>
-  <a href="/secrets">Секреты</a>
-  <a href="/matrix/bind">Matrix binding</a>
-  <a href="/me/settings">Мои настройки</a>
+  <strong><a href="/" style="color:#fafafa;">Панель Matrix-бота</a></strong>
+  <div class="header-group">
+    <a class="{% if _path == '/' %}active{% endif %}" href="/">Обзор</a>
+    <a class="{% if _path.startswith('/users') %}active{% endif %}" href="/users">Пользователи</a>
+    <a class="{% if _path.startswith('/routes') %}active{% endif %}" href="/routes/status">Маршруты</a>
+    <a class="{% if _path.startswith('/onboarding') or _path.startswith('/secrets') %}active{% endif %}" href="/onboarding">Интеграции</a>
+    <a class="{% if _path.startswith('/me/settings') or _path.startswith('/matrix/bind') or _path.startswith('/app-users') %}active{% endif %}" href="/me/settings">Настройки</a>
+  </div>
   <span style="margin-left:auto;"></span>
   <a href="/logout">Выход</a>
 </header>
 <main>
+{% set _current_user = request.state._state.get('current_user') %}
+{% set _integration_status = request.state._state.get('integration_status') %}
+{% if _current_user and _integration_status and (not _integration_status.configured) %}
+<div class="warning">
+  Интеграции не настроены, функционал ограничен.
+  <a href="/onboarding">Открыть мастер онбординга</a>.
+</div>
+{% endif %}
 {% block content %}{% endblock %}
 </main>
 </body>

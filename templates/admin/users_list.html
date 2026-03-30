@@ -2,34 +2,56 @@
 {% block title %}Пользователи{% endblock %}
 {% block content %}
 <h1>Пользователи</h1>
+<p class="muted">Масштабируемый список: поиск, фильтры и группировка по отделам.</p>
 <p><a class="btn btn-primary" href="/users/new">Добавить</a></p>
-<table>
-  <thead>
-    <tr>
-      <th>Redmine ID</th>
-      <th>Комната</th>
-      <th>notify</th>
-      <th>DND</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for u in users %}
-    <tr>
-      <td>{{ u.redmine_id }}</td>
-      <td><code>{{ u.room[:40] }}{% if u.room|length > 40 %}…{% endif %}</code></td>
-      <td><code>{{ u.notify }}</code></td>
-      <td>{{ "да" if u.dnd else "нет" }}</td>
-      <td>
-        <a class="btn btn-ghost" href="/users/{{ u.id }}/edit">Изменить</a>
-        <form method="post" action="/users/{{ u.id }}/delete" style="display:inline;" hx-confirm="Удалить пользователя?">
-          <button type="submit" class="btn btn-danger">Удалить</button>
-        </form>
-      </td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5" class="muted">Нет записей</td></tr>
+<form method="get" action="/users" class="card" style="margin-bottom:1rem;">
+  <label for="q">Поиск</label>
+  <input id="q" name="q" value="{{ q or '' }}" placeholder="Имя, отдел, комната"/>
+  <label for="department">Отдел</label>
+  <select id="department" name="department">
+    <option value="">Все отделы</option>
+    {% for dep in departments %}
+      <option value="{{ dep }}" {% if dep == department_filter %}selected{% endif %}>{{ dep }}</option>
     {% endfor %}
-  </tbody>
-</table>
+  </select>
+  <p style="margin-top:1rem;">
+    <button type="submit" class="btn btn-primary">Применить</button>
+    <a class="btn btn-ghost" href="/users">Сбросить</a>
+  </p>
+</form>
+
+{% for dep_name, dep_users in grouped_users.items() %}
+<details class="card" {% if department_filter or q %}open{% elif loop.index0 == 0 %}open{% endif %}>
+  <summary><strong>{{ dep_name }}</strong> — {{ dep_users|length }} чел.</summary>
+  <table style="margin-top:.75rem;">
+    <thead>
+      <tr>
+        <th>Имя</th>
+        <th>Redmine ID</th>
+        <th>Комната</th>
+        <th>DND</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in dep_users %}
+      <tr>
+        <td>{{ u.display_name or "—" }}</td>
+        <td>{{ u.redmine_id }}</td>
+        <td><code>{{ u.room[:40] }}{% if u.room|length > 40 %}…{% endif %}</code></td>
+        <td>{{ "да" if u.dnd else "нет" }}</td>
+        <td>
+          <a class="btn btn-ghost" href="/users/{{ u.id }}/edit">Изменить</a>
+          <form method="post" action="/users/{{ u.id }}/delete" style="display:inline;" hx-confirm="Удалить пользователя?">
+            <button type="submit" class="btn btn-danger">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% else %}
+<div class="card muted">Нет записей</div>
+{% endfor %}
 {% endblock %}

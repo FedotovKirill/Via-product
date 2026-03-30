@@ -15,6 +15,11 @@
       <button type="submit" class="btn btn-primary" style="width:100%;">Войти</button>
     </p>
   </form>
-  <p><a href="/forgot-password">Забыли пароль?</a></p>
+  <p style="display:flex; gap:1rem; flex-wrap:wrap;">
+    <a href="/forgot-password">Забыли пароль?</a>
+    {% if can_register_admin %}
+    <a href="/setup">Зарегистрировать администратора</a>
+    {% endif %}
+  </p>
 </div>
 {% endblock %}
