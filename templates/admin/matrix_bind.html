@@ -1,8 +1,8 @@
 {% extends "base.html" %}
+{% from "macros.html" import page_head %}
 {% block title %}Привязка Matrix комнаты{% endblock %}
 {% block content %}
-<h1>Привязка Matrix комнаты</h1>
-<p class="muted">Два шага: отправьте код в комнату, затем подтвердите его. После подтверждения уведомления пойдут в эту комнату.</p>
+{{ page_head("Привязка Matrix комнаты", "Два шага: отправьте код в комнату, затем подтвердите его. После подтверждения уведомления пойдут в эту комнату.") }}
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div class="stack" style="grid-template-columns: repeat(auto-fit,minmax(18rem,1fr));">
   <div class="card">

@@ -1,12 +1,10 @@
 {% extends "base.html" %}
+{% from "macros.html" import page_head %}
 {% block title %}Мои настройки{% endblock %}
 {% block content %}
-<h1>Мои настройки</h1>
+{{ page_head("Мои настройки", "Редактируйте расписание DND и правила уведомлений для вашей Redmine-учётки.") }}
 
-<div class="card" style="margin-top:1rem;">
-  <p class="field-hint">
-    Редактируйте расписание DND и правила уведомлений для вашей Redmine-учётки.
-  </p>
+<div class="card">
   <form class="form" method="post" action="/me/settings">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
     <div class="field">

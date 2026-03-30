@@ -1,14 +1,14 @@
 {% extends "base.html" %}
+{% from "macros.html" import page_head %}
 {% block title %}Первичная настройка подключений{% endblock %}
 {% block content %}
+{{ page_head("Первичная настройка подключений", "Укажите служебные ключи для Redmine и Matrix. Можно пропустить этот шаг и вернуться позже в раздел «Интеграции».") }}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if missing %}
+<p class="muted">Ещё не заполнено: <code>{{ missing|join(", ") }}</code></p>
+{% endif %}
 <div class="card" style="max-width: 52rem; margin: 0 auto;">
-  <h1 style="margin-top:0;">Первичная настройка подключений</h1>
-  <p class="muted">Укажите служебные ключи для Redmine и Matrix. Можно пропустить этот шаг и вернуться позже в раздел «Интеграции».</p>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  {% if missing %}
-  <p class="muted">Ещё не заполнено: <code>{{ missing|join(", ") }}</code></p>
-  {% endif %}
-  <form class="form" method="post" action="/onboarding/save" style="margin-top:1rem;">
+  <form class="form" method="post" action="/onboarding/save" style="margin-top:0;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
     <div class="card card-nested stack">
       <h2 style="margin-top:0;">Redmine</h2>

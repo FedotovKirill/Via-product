@@ -1,8 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Обзор{% endblock %}
 {% block content %}
-<h1>Обзор</h1>
-<p class="muted">Конфигурация хранится в PostgreSQL. После изменений перезапустите контейнер <code>bot</code>, т.к. он читает конфиг при старте.</p>
+<header class="page-head">
+  <div class="page-head-row">
+    <div class="page-head-text">
+      <h1>Обзор</h1>
+      <p class="lead">Конфигурация хранится в PostgreSQL. После изменений перезапустите контейнер <code>bot</code>, т.к. он читает конфиг при старте.</p>
+    </div>
+  </div>
+</header>
 
 <div class="grid-stats">
   <div class="card stat-card">

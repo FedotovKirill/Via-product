@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% from "macros.html" import room_cell %}
+{% from "macros.html" import room_cell, page_head %}
 {% block title %}Пользователи{% endblock %}
 {% block content %}
-<h1>Пользователи</h1>
-<p class="muted">Поиск, фильтры и группировка по отделам.</p>
-<p class="page-actions"><a class="btn btn-primary" href="/users/new"><i class="fa-solid fa-plus"></i> Добавить</a></p>
+{% call page_head("Пользователи", "Поиск, фильтры и группировка по отделам.") %}
+  <a class="btn btn-primary" href="/users/new"><i class="fa-solid fa-plus"></i> Добавить</a>
+{% endcall %}
 
 <form method="get" action="/users" class="card form" style="margin-bottom:1rem;">
   <div class="filter-row">
@@ -39,7 +39,7 @@
           <th>Redmine ID</th>
           <th>Комната</th>
           <th>DND</th>
-          <th></th>
+          <th class="table-actions" aria-label="Действия"></th>
         </tr>
       </thead>
       <tbody>
@@ -49,7 +49,7 @@
           <td>{{ u.redmine_id }}</td>
           <td>{{ room_cell(u.room) }}</td>
           <td>{{ "да" if u.dnd else "нет" }}</td>
-          <td>
+          <td class="table-actions">
             <a class="btn btn-ghost" href="/users/{{ u.id }}/edit">Изменить</a>
             <form method="post" action="/users/{{ u.id }}/delete" style="display:inline;" hx-confirm="Удалить пользователя?">
               <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>

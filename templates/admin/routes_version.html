@@ -1,19 +1,18 @@
 {% extends "base.html" %}
-{% from "macros.html" import room_cell %}
+{% from "macros.html" import room_cell, page_head %}
 {% block title %}Версии по комнатам{% endblock %}
 {% block content %}
-<h1>Версии по комнатам</h1>
-<p class="muted">Ключ версии (как в Redmine) → комната Matrix.</p>
+{{ page_head("Версии по комнатам", "Ключ версии (как в Redmine) → комната Matrix.") }}
 
 <div class="table-wrap">
   <table>
-    <thead><tr><th>Версия (ключ)</th><th>Комната</th><th></th></tr></thead>
+    <thead><tr><th>Версия (ключ)</th><th>Комната</th><th class="table-actions" aria-label="Действия"></th></tr></thead>
     <tbody>
       {% for r in rows %}
       <tr>
         <td>{{ r.version_key }}</td>
         <td>{{ room_cell(r.room_id) }}</td>
-        <td>
+        <td class="table-actions">
           <form method="post" action="/routes/version/{{ r.id }}/delete" style="display:inline;" hx-confirm="Удалить?">
             <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
             <button type="submit" class="btn btn-danger">Удалить</button>
@@ -21,7 +20,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="3" class="muted">Нет записей</td></tr>
+      <tr class="table-empty"><td colspan="3">Нет записей</td></tr>
       {% endfor %}
     </tbody>
   </table>

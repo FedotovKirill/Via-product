@@ -1,4 +1,19 @@
-{# Общие фрагменты разметки админки. Подключение: {% from "macros.html" import room_cell %} #}
+{# Общие фрагменты разметки админки. Подключение: {% from "macros.html" import room_cell, page_head %} #}
 {% macro room_cell(room_id, max_len=36) %}
 <code class="mono-truncate" title="{{ room_id }}">{{ room_id[:max_len] }}{% if room_id|length > max_len %}…{% endif %}</code>
+{% endmacro %}
+
+{# Заголовок страницы: h1 + lead. Опционально {% call page_head("Заголовок", "Подзаголовок") %}…кнопки…{% endcall %} #}
+{% macro page_head(title, lead=None) %}
+<header class="page-head">
+  <div class="page-head-row">
+    <div class="page-head-text">
+      <h1>{{ title }}</h1>
+      {% if lead %}<p class="lead">{{ lead }}</p>{% endif %}
+    </div>
+    {% if caller is defined %}
+    <div class="page-head-actions">{{ caller() }}</div>
+    {% endif %}
+  </div>
+</header>
 {% endmacro %}

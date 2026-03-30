@@ -233,8 +233,42 @@
       .app-main { margin-left: 0; }
     }
     /* Legacy utility classes used across admin templates */
-    h1 { margin: 0 0 0.75rem; font-size: 1.75rem; font-weight: 600; }
+    h1 { margin: 0 0 0.75rem; font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
     h2 { margin: 0 0 0.5rem; font-size: 1.15rem; font-weight: 600; }
+    .page-head {
+      margin-bottom: 1.5rem;
+    }
+    .page-head-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem 1.5rem;
+    }
+    .page-head-text {
+      flex: 1 1 14rem;
+      min-width: 0;
+    }
+    .page-head h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .page-head .lead {
+      margin: 0;
+      max-width: 44rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+    .page-head-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      flex-shrink: 0;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -247,6 +281,39 @@
     th, td { text-align: left; padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { background: rgba(255,255,255,0.04); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
     tr:last-child td { border-bottom: none; }
+    th.table-actions,
+    td.table-actions {
+      width: 1%;
+      white-space: nowrap;
+      text-align: right;
+      vertical-align: middle;
+    }
+    td.table-actions form { display: inline-block; vertical-align: middle; margin-left: 0.35rem; }
+    td.table-actions form:first-of-type { margin-left: 0; }
+    td.table-actions .btn { vertical-align: middle; }
+    tbody tr.table-empty td {
+      text-align: center;
+      color: var(--muted);
+      padding: 1.75rem 1rem;
+      font-size: 0.95rem;
+      border-bottom: none;
+    }
+    td.cell-form {
+      vertical-align: middle;
+      text-align: left;
+    }
+    td.cell-form form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    td.cell-form input[type="password"] {
+      width: auto;
+      min-width: 10rem;
+      max-width: 18rem;
+      flex: 1 1 12rem;
+    }
     .btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
       padding: 0.45rem 0.85rem; border-radius: 0.6rem; font-size: 0.88rem; font-weight: 500;
