@@ -4,7 +4,7 @@
 {% block content %}
 {{ page_head("Привязка Matrix комнаты", "Два шага: отправьте код в комнату, затем подтвердите его. После подтверждения уведомления пойдут в эту комнату.") }}
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
-<div class="stack" style="grid-template-columns: repeat(auto-fit,minmax(18rem,1fr));">
+<div class="stack content-stack" style="grid-template-columns: repeat(auto-fit,minmax(18rem,1fr));">
   <div class="card">
     <h2>1. Отправить код</h2>
     <form class="form" method="post" action="/matrix/bind/start">

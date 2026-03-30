@@ -72,6 +72,15 @@ _jinja_env = Environment(
     autoescape=True,
     cache_size=0,
 )
+
+
+def _admin_asset_version() -> str:
+    """Query string для cache-bust ссылок на `/static/...` (см. `ADMIN_ASSET_VERSION`)."""
+    v = (os.getenv("ADMIN_ASSET_VERSION") or "").strip()
+    return v if v else "1"
+
+
+_jinja_env.globals["asset_version"] = _admin_asset_version
 templates = Jinja2Templates(env=_jinja_env)
 
 app = FastAPI(title="Matrix bot control panel", version="0.1.0")

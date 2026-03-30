@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="/static/admin/css/panel.css"/>
+  <link rel="stylesheet" href="/static/admin/css/panel.css?v={{ asset_version() }}"/>
   {% block head_extra %}{% endblock %}
 </head>
 <body>
@@ -41,11 +41,20 @@
       <div class="topbar-left">
         <button type="button" class="menu-btn" id="sidebar-toggle" aria-label="Открыть меню"><i class="fa-solid fa-bars"></i></button>
         {% if _current_user and _integration_status and (not _integration_status.configured) %}
-        <a class="banner-warn" href="/onboarding">
-          <i class="fa-solid fa-triangle-exclamation"></i>
-          <span>Интеграции не настроены — функционал ограничен.</span>
-          <span style="text-decoration: underline;">Открыть мастер</span>
-        </a>
+        <div class="integration-banner" id="integration-banner" data-storage-key="admin_integration_banner_v1">
+          <a class="banner-warn" href="/onboarding">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <span class="banner-warn__text">Интеграции не настроены — функционал ограничен.</span>
+            <span class="banner-warn__cta">Открыть мастер</span>
+          </a>
+          <a class="banner-warn banner-warn--compact" href="/onboarding" title="Интеграции не настроены — открыть мастер">
+            <i class="fa-solid fa-plug" aria-hidden="true"></i>
+            <span>Интеграции</span>
+          </a>
+          <button type="button" class="integration-banner__collapse" id="integration-banner-collapse" aria-expanded="true" aria-label="Свернуть напоминание">
+            <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
+          </button>
+        </div>
         {% endif %}
       </div>
       {% if _current_user %}
@@ -192,6 +201,39 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeSidebar();
     });
+  }
+})();
+
+(function () {
+  var ib = document.getElementById('integration-banner');
+  var btn = document.getElementById('integration-banner-collapse');
+  var key = ib && ib.getAttribute('data-storage-key');
+  function applyCollapsed(collapsed) {
+    if (!ib) return;
+    ib.classList.toggle('integration-banner--collapsed', collapsed);
+    if (btn) {
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', collapsed ? 'Развернуть напоминание' : 'Свернуть напоминание');
+      var icon = btn.querySelector('i');
+      if (icon) {
+        icon.className = collapsed ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up';
+      }
+    }
+  }
+  if (ib && key) {
+    try {
+      if (localStorage.getItem(key) === '1') applyCollapsed(true);
+    } catch (e) {}
+    if (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        var collapsed = !ib.classList.contains('integration-banner--collapsed');
+        applyCollapsed(collapsed);
+        try {
+          localStorage.setItem(key, collapsed ? '1' : '0');
+        } catch (err) {}
+      });
+    }
   }
 })();
 </script>

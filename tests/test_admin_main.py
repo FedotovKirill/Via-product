@@ -37,7 +37,14 @@ def test_login_page_ok(client: TestClient):
     assert "Email" in r.text
     assert "Пароль" in r.text
     assert "Забыли пароль?" in r.text
-    assert "/static/admin/css/auth.css" in r.text
+    assert "/static/admin/css/auth.css?v=" in r.text
+
+
+def test_admin_asset_version_helper(monkeypatch):
+    monkeypatch.delenv("ADMIN_ASSET_VERSION", raising=False)
+    assert admin_main._admin_asset_version() == "1"
+    monkeypatch.setenv("ADMIN_ASSET_VERSION", "build-xyz")
+    assert admin_main._admin_asset_version() == "build-xyz"
 
 
 def test_static_admin_css_served(client: TestClient):

@@ -13,6 +13,21 @@
   --warning-border: rgba(250, 204, 21, 0.45);
   --radius: 0.75rem;
   --sidebar-w: 18rem;
+  /* Основной контент: чуть крупнее на широких экранах */
+  --font-main: clamp(1rem, 0.92rem + 0.35vw, 1.125rem);
+  --control-pad-y: 0.65rem;
+  --control-pad-x: 0.85rem;
+  --control-min-h: 2.75rem;
+  /* Сетка: узкие формы vs широкие таблицы на ультрашироких экранах */
+  --content-form-max: min(52rem, 100%);
+  --content-table-max: min(85rem, 100%);
+  /* Единый язык «выбора»: радио, пилюли дней, чекбоксы в сетке */
+  --choice-surface: rgba(15, 23, 42, 0.5);
+  --choice-border: var(--border);
+  --choice-radius-pill: 999px;
+  --choice-radius-soft: 0.65rem;
+  --choice-active-bg: rgba(6, 182, 212, 0.14);
+  --choice-active-border: rgba(6, 182, 212, 0.5);
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -22,6 +37,8 @@ body {
   font-family: Inter, system-ui, sans-serif;
   background: var(--bg);
   color: var(--fg);
+  font-size: 1rem;
+  line-height: 1.55;
 }
 .app-shell { display: flex; min-height: 100vh; }
 /* Sidebar */
@@ -104,6 +121,51 @@ body {
   flex-wrap: wrap;
 }
 .topbar-left { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
+.integration-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+.integration-banner__collapse {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  color: #fde68a;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.integration-banner__collapse:hover {
+  background: rgba(250, 204, 21, 0.12);
+  color: #fef9c3;
+}
+.integration-banner__collapse:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.integration-banner--collapsed .banner-warn:not(.banner-warn--compact) {
+  display: none;
+}
+.banner-warn--compact {
+  display: none;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  max-width: 100%;
+}
+.integration-banner--collapsed .banner-warn--compact {
+  display: inline-flex;
+}
 .menu-btn {
   display: none;
   align-items: center;
@@ -119,19 +181,26 @@ body {
 .banner-warn {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
-  padding: 0.4rem 0.9rem;
+  padding: 0.32rem 0.75rem;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 500;
-  background: rgba(250, 204, 21, 0.15);
-  border: 1px solid var(--warning-border);
-  color: #fef9c3;
+  background: rgba(250, 204, 21, 0.08);
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  color: #e7e5e4;
   text-decoration: none;
   max-width: 100%;
 }
-.banner-warn:hover { filter: brightness(1.08); }
+.banner-warn:hover { filter: brightness(1.06); }
+.banner-warn__text { color: #d6d3d1; }
+.banner-warn__cta {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  color: #fde68a;
+  font-weight: 600;
+}
 .user-menu-wrap { position: relative; }
 .user-trigger {
   display: flex;
@@ -197,10 +266,23 @@ body {
 .dropdown hr { border: none; border-top: 1px solid var(--border); margin: 0.35rem 0; }
 .main-content {
   flex: 1;
-  padding: 1.5rem 1.5rem 2.5rem;
+  padding: clamp(1.25rem, 1rem + 1vw, 2.25rem) clamp(1.25rem, 0.75rem + 1.5vw, 2.5rem) 2.5rem;
   max-width: 90rem;
   margin: 0 auto;
   width: 100%;
+  font-size: var(--font-main);
+}
+/* Центрированная колонка для длинных форм (таблицы и сетки статистики остаются на полную ширину main-content) */
+.content-stack {
+  max-width: var(--content-form-max);
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+.page-head {
+  max-width: var(--content-table-max);
+  margin-left: auto;
+  margin-right: auto;
 }
 .backdrop {
   display: none;
@@ -342,6 +424,18 @@ input[type="checkbox"] {
 }
 input:focus, textarea:focus, select:focus {
   outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-dim);
+}
+/* В основной области — выше контролы для читаемости на десктопе */
+.main-content input:not([type="radio"]):not([type="checkbox"]),
+.main-content textarea,
+.main-content select {
+  padding: var(--control-pad-y) var(--control-pad-x);
+  min-height: var(--control-min-h);
+}
+.main-content .btn {
+  padding: 0.55rem 1rem;
+  min-height: 2.5rem;
+  font-size: 0.95rem;
 }
 label { display: block; font-weight: 500; font-size: 0.9rem; }
 /* Вертикальный ритм форм: без «плавающих» margin у label */
@@ -489,7 +583,7 @@ details.card[open] > summary::after { content: " ▲"; }
 
 /* ---------- «Мои настройки» (референс: крупнее типографика, пилюли дней, кнопка Save) ---------- */
 .page-settings {
-  max-width: 46rem;
+  max-width: var(--content-form-max);
 }
 .page-settings .page-head .lead {
   font-size: 1rem;
@@ -578,21 +672,22 @@ fieldset.settings-fieldset > legend {
 .radio-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 .radio-stack .choice--radio {
-  padding: 0.55rem 0.75rem;
-  border-radius: 0.65rem;
-  border: 1px solid transparent;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--choice-radius-pill);
+  border: 1px solid var(--choice-border);
+  background: var(--choice-surface);
   transition: background 0.15s, border-color 0.15s;
   font-size: 1rem;
 }
 .radio-stack .choice--radio:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
 }
 .radio-stack .choice--radio:has(input:checked) {
-  border-color: rgba(6, 182, 212, 0.45);
-  background: rgba(6, 182, 212, 0.1);
+  border-color: var(--choice-active-border);
+  background: var(--choice-active-bg);
 }
 
 .sub-panel--notify {
@@ -612,7 +707,16 @@ fieldset.settings-fieldset > legend {
 }
 .notify-events-grid .choice {
   font-size: 0.95rem;
-  padding: 0.2rem 0;
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--choice-radius-soft);
+  border: 1px solid var(--choice-border);
+  background: var(--choice-surface);
+  transition: border-color 0.15s, background 0.15s;
+}
+.notify-events-grid .choice:has(input:checked) {
+  border-color: var(--choice-active-border);
+  background: var(--choice-active-bg);
 }
 
 .day-pills {
@@ -642,12 +746,12 @@ fieldset.settings-fieldset > legend {
   justify-content: center;
   min-width: 2.65rem;
   padding: 0.5rem 0.65rem;
-  border-radius: 999px;
+  border-radius: var(--choice-radius-pill);
   font-size: 0.92rem;
   font-weight: 600;
-  border: 1px solid var(--border);
+  border: 1px solid var(--choice-border);
   color: var(--fg);
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--choice-surface);
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .day-pill__input:focus-visible + .day-pill__text {
@@ -655,9 +759,9 @@ fieldset.settings-fieldset > legend {
   outline-offset: 2px;
 }
 .day-pill__input:checked + .day-pill__text {
-  background: linear-gradient(135deg, var(--cyan), #0891b2);
-  color: #0f172a;
-  border-color: transparent;
+  border-color: var(--choice-active-border);
+  background: var(--choice-active-bg);
+  color: var(--fg);
 }
 
 .field-dnd {
@@ -683,18 +787,18 @@ fieldset.settings-fieldset > legend {
 }
 .btn-settings-save {
   width: 100%;
-  background: #f1f5f9;
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 1.05rem;
-  padding: 0.95rem 1.5rem;
+  background: linear-gradient(135deg, var(--cyan), #0891b2);
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.85rem 1.5rem;
   border-radius: 999px;
   border: none;
   cursor: pointer;
   transition: filter 0.15s, transform 0.05s;
 }
 .btn-settings-save:hover {
-  filter: brightness(0.97);
+  filter: brightness(1.06);
 }
 .btn-settings-save:focus-visible {
   outline: 2px solid var(--cyan);

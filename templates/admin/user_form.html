@@ -3,7 +3,7 @@
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 {{ page_head(title) }}
-<div class="card">
+<div class="card content-stack">
 <form class="form" method="post" action="{% if u %}/users/{{ u.id }}{% else %}/users{% endif %}">
   <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
   <div class="field">
