@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, LargeBinary, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -28,6 +28,8 @@ class BotUser(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     redmine_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    department: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     room: Mapped[str] = mapped_column(Text, nullable=False)
     notify: Mapped[list] = mapped_column(JSONB, nullable=False, default=lambda: ["all"])
     work_hours: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -108,6 +110,8 @@ class BotAppUser(Base):
 
     # Связь с редмайн-пользователем для self-service.
     redmine_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class BotMagicToken(Base):
@@ -131,8 +135,39 @@ class BotSession(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    requested_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AppSecret(Base):
+    __tablename__ = "app_secrets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    key_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 

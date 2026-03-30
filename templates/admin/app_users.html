@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Аккаунты панели{% endblock %}
+{% block content %}
+<h1>Аккаунты панели</h1>
+<p class="muted">Управление пользователями, которые входят в admin UI.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Email</th>
+      <th>Роль</th>
+      <th>Верификация</th>
+      <th>Сброс пароля админом</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.email }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ u.verified_at or "—" }}</td>
+      <td>
+        <form method="post" action="/app-users/{{ u.id }}/reset-password-admin" style="display:flex; gap:.5rem; align-items:center;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+          <input type="password" name="new_password" placeholder="Новый пароль" required style="max-width:16rem;"/>
+          <button class="btn btn-danger" type="submit">Сбросить</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">Нет учётных записей</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

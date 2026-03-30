@@ -9,6 +9,10 @@
     <li>Маршруты по статусу: <strong>{{ status_routes_count }}</strong></li>
     <li>Маршруты по версии: <strong>{{ version_routes_count }}</strong></li>
   </ul>
-  <p style="margin-top:1rem;"><a class="btn btn-primary" href="/users">Управление пользователями</a></p>
+  <p style="margin-top:1rem; display:flex; gap:.6rem; flex-wrap:wrap;">
+    <a class="btn btn-primary" href="/users">Управление пользователями</a>
+    <a class="btn btn-ghost" href="/onboarding">Онбординг интеграций</a>
+    <a class="btn btn-ghost" href="/app-users">Аккаунты панели</a>
+  </p>
 </div>
 {% endblock %}

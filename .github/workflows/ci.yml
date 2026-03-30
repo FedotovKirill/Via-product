@@ -24,6 +24,8 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://bot:postgres@localhost:5432/redmine_matrix
+      APP_MASTER_KEY: 0123456789abcdef0123456789abcdef
+      SMTP_MOCK: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,6 +37,9 @@ jobs:
       - name: pytest
         run: |
           alembic upgrade head
+          alembic downgrade -1 || true
+          alembic upgrade head
+          python scripts/check_env_sync.py
           python -m pytest tests/ -q --tb=short
 
   docker:
