@@ -1043,8 +1043,10 @@ async def users_create(
     work_days_json: Annotated[str, Form()] = "",
     work_days_values: Annotated[list[str], Form()] = [],
     dnd: Annotated[str, Form()] = "",
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1123,8 +1125,10 @@ async def users_update(
     work_days_json: Annotated[str, Form()] = "",
     work_days_values: Annotated[list[str], Form()] = [],
     dnd: Annotated[str, Form()] = "",
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1161,8 +1165,10 @@ async def users_update(
 async def users_delete(
     request: Request,
     user_id: int,
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1281,8 +1287,10 @@ async def routes_status_add(
     request: Request,
     status_key: Annotated[str, Form()],
     room_id: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1302,8 +1310,10 @@ async def routes_status_add_by_room(
     request: Request,
     room_id: Annotated[str, Form()],
     status_keys: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1331,8 +1341,10 @@ async def routes_status_add_by_room(
 async def routes_status_del(
     request: Request,
     row_id: int,
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1365,8 +1377,10 @@ async def routes_version_add(
     request: Request,
     version_key: Annotated[str, Form()],
     room_id: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1378,8 +1392,10 @@ async def routes_version_add(
 async def routes_version_del(
     request: Request,
     row_id: int,
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1409,8 +1425,10 @@ async def matrix_bind_start(
     request: Request,
     redmine_id: Annotated[int, Form()],
     room_id: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -1489,8 +1507,10 @@ async def matrix_bind_confirm(
     redmine_id: Annotated[int, Form()],
     room_id: Annotated[str, Form()],
     code: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user:
         return RedirectResponse("/login", status_code=303)

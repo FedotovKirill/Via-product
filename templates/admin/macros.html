@@ -1,0 +1,4 @@
+{# Общие фрагменты разметки админки. Подключение: {% from "macros.html" import room_cell %} #}
+{% macro room_cell(room_id, max_len=36) %}
+<code class="mono-truncate" title="{{ room_id }}">{{ room_id[:max_len] }}{% if room_id|length > max_len %}…{% endif %}</code>
+{% endmacro %}

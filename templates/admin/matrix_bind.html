@@ -8,6 +8,7 @@
   <div class="card">
     <h2>1. Отправить код</h2>
     <form method="post" action="/matrix/bind/start">
+      <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
       <label for="redmine_id_start">Redmine ID пользователя</label>
       <input id="redmine_id_start" name="redmine_id" value="{{ redmine_id }}" required/>
       <label for="room_id_start">Комната Matrix (room_id)</label>
@@ -26,6 +27,7 @@
       <p><strong>Dev code:</strong> <code>{{ dev_code }}</code></p>
     {% endif %}
     <form method="post" action="/matrix/bind/confirm">
+      <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
       <label for="redmine_id_confirm">Redmine ID пользователя</label>
       <input id="redmine_id_confirm" name="redmine_id" value="{{ redmine_id }}" required/>
       <label for="room_id_confirm">Комната Matrix (room_id)</label>

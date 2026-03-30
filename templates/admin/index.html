@@ -3,16 +3,31 @@
 {% block content %}
 <h1>Обзор</h1>
 <p class="muted">Конфигурация хранится в PostgreSQL. После изменений перезапустите контейнер <code>bot</code>, т.к. он читает конфиг при старте.</p>
-<div class="card" style="margin-top:1rem;">
-  <ul style="margin:0; padding-left:1.25rem;">
-    <li>Пользователи: <strong>{{ users_count }}</strong></li>
-    <li>Маршруты по статусу: <strong>{{ status_routes_count }}</strong></li>
-    <li>Маршруты по версии: <strong>{{ version_routes_count }}</strong></li>
-  </ul>
-  <p style="margin-top:1rem; display:flex; gap:.6rem; flex-wrap:wrap;">
-    <a class="btn btn-primary" href="/users">Управление пользователями</a>
-    <a class="btn btn-ghost" href="/onboarding">Онбординг интеграций</a>
-    <a class="btn btn-ghost" href="/app-users">Аккаунты панели</a>
+
+<div class="grid-stats">
+  <div class="card stat-card">
+    <div class="stat-label">Пользователи</div>
+    <div class="stat-value">{{ users_count }}</div>
+    <i class="fa-solid fa-users stat-icon" aria-hidden="true"></i>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Маршруты по статусу</div>
+    <div class="stat-value">{{ status_routes_count }}</div>
+    <i class="fa-solid fa-route stat-icon" aria-hidden="true"></i>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Маршруты по версии</div>
+    <div class="stat-value">{{ version_routes_count }}</div>
+    <i class="fa-solid fa-code-branch stat-icon" aria-hidden="true"></i>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1.25rem;">
+  <h2 style="margin-top:0;">Быстрые действия</h2>
+  <p class="page-actions">
+    <a class="btn btn-primary" href="/users"><i class="fa-solid fa-users"></i> Управление пользователями</a>
+    <a class="btn btn-ghost" href="/onboarding"><i class="fa-solid fa-wand-magic-sparkles"></i> Онбординг интеграций</a>
+    <a class="btn btn-ghost" href="/app-users"><i class="fa-solid fa-user-shield"></i> Аккаунты панели</a>
   </p>
 </div>
 {% endblock %}

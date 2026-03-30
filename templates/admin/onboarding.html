@@ -10,7 +10,7 @@
   {% endif %}
   <form method="post" action="/onboarding/save" class="stack" style="margin-top:1rem;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
-    <div class="card" style="padding:.85rem;">
+    <div class="card card-nested" style="padding:.85rem;">
       <h2 style="margin-top:0;">Redmine</h2>
       <label for="secret_REDMINE_URL">Адрес Redmine</label>
       <input id="secret_REDMINE_URL" name="secret_REDMINE_URL" type="text" placeholder="https://redmine.company.local"/>
@@ -19,7 +19,7 @@
       <input id="secret_REDMINE_API_KEY" name="secret_REDMINE_API_KEY" type="text" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
       <p class="muted">Ключ сервисной учётки с доступом к проектам для мониторинга.</p>
     </div>
-    <div class="card" style="padding:.85rem;">
+    <div class="card card-nested" style="padding:.85rem;">
       <h2 style="margin-top:0;">Matrix</h2>
       <label for="secret_HOMESERVER">Адрес homeserver</label>
       <input id="secret_HOMESERVER" name="secret_HOMESERVER" type="text" placeholder="https://matrix.company.local"/>

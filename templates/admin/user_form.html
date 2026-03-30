@@ -4,6 +4,7 @@
 <h1>{{ title }}</h1>
 <div class="card">
 <form method="post" action="{% if u %}/users/{{ u.id }}{% else %}/users{% endif %}">
+  <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
   <label for="display_name">Имя (как показывать в панели)</label>
   <input type="text" id="display_name" name="display_name"
     value="{{ u.display_name if u and u.display_name else '' }}" placeholder="Иван Петров"/>
