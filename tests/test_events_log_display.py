@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import pytest
 
+from datetime import date
+
 from events_log_display import (
     admin_events_log_timestamp_now,
+    events_log_to_csv_bytes,
+    filter_parsed_lines_by_local_date,
     format_events_log_for_ui,
+    parse_events_log_for_table,
     reformat_log_line,
 )
 from zoneinfo import ZoneInfo
@@ -74,3 +79,32 @@ def test_parse_as_utc_env_off(monkeypatch, off):
     line = "2026-04-02 09:21:14 [ADMIN] x"
     text = format_events_log_for_ui(line)
     assert "09:21:14" in text
+
+
+def test_parse_events_log_for_table_sorts_newest_first(monkeypatch):
+    monkeypatch.setenv("BOT_TIMEZONE", "Europe/Moscow")
+    monkeypatch.setenv("ADMIN_EVENTS_LOG_PARSE_AS_UTC", "1")
+    raw = "2026-04-02 06:00:01 [INFO] a\n2026-04-02 07:00:00 [WARNING] b\n"
+    lines = parse_events_log_for_table(raw)
+    assert len(lines) == 2
+    assert lines[0].level == "WARNING" and "b" in lines[0].message
+    assert lines[1].level == "INFO"
+
+
+def test_filter_parsed_lines_by_local_date(monkeypatch):
+    monkeypatch.setenv("BOT_TIMEZONE", "Europe/Moscow")
+    monkeypatch.setenv("ADMIN_EVENTS_LOG_PARSE_AS_UTC", "1")
+    raw = "2026-04-02 06:00:00 [INFO] x\n"
+    lines = parse_events_log_for_table(raw)
+    tz = ZoneInfo("Europe/Moscow")
+    assert len(filter_parsed_lines_by_local_date(lines, date(2026, 4, 2), date(2026, 4, 2), tz)) == 1
+    assert len(filter_parsed_lines_by_local_date(lines, date(2026, 4, 3), date(2026, 4, 3), tz)) == 0
+
+
+def test_events_log_to_csv_bytes_has_bom_and_header(monkeypatch):
+    monkeypatch.setenv("BOT_TIMEZONE", "Europe/Moscow")
+    monkeypatch.setenv("ADMIN_EVENTS_LOG_PARSE_AS_UTC", "1")
+    lines = parse_events_log_for_table("2026-04-02 12:00:00 [INFO] hi\n")
+    b = events_log_to_csv_bytes(lines)
+    assert b.startswith("\ufeff".encode("utf-8"))
+    assert b"level" in b and b"INFO" in b and b"hi" in b

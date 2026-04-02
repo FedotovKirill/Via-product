@@ -1,5 +1,5 @@
 """
-Отображение хвоста лога на странице «События»: новые строки сверху, дата ДД.ММ.ГГГГ ЧЧ:ММ:СС, без миллисекунд.
+Отображение лога на странице «События»: таблица (дата, время, уровень, сообщение), фильтр по датам, CSV.
 
 Префикс времени в формате logging `YYYY-MM-DD HH:MM:SS,mmm` обычно в **UTC** в контейнере Docker
 (локаль процесса). По умолчанию парсим как UTC и переводим в BOT_TIMEZONE для показа.
@@ -9,9 +9,12 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import os
 import re
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 # Стандартный asctime logging: 2026-04-02 06:21:14,317
@@ -62,6 +65,156 @@ def reformat_log_line(line: str, *, display_tz: ZoneInfo, assume_utc: bool) -> s
     if _RE_DMY_TS.match(line):
         return line
     return line
+
+
+@dataclass(frozen=True)
+class ParsedLogLine:
+    """Одна строка файла событий после разбора (для таблицы и CSV)."""
+
+    date_ui: str
+    time_ui: str
+    level: str
+    message: str
+    sort_key: datetime | None
+    raw: str
+
+
+def _unparsed_line(raw: str) -> ParsedLogLine:
+    s = raw.rstrip("\n\r")
+    return ParsedLogLine("—", "—", "—", s[:8000] if s else "—", None, raw)
+
+
+def parse_events_log_line(line: str, *, display_tz: ZoneInfo, assume_utc: bool) -> ParsedLogLine:
+    """Разбор одной строки: ISO asctime бота или ДД.ММ.ГГГГ с опциональным [LEVEL]."""
+    raw = line
+    s = line.rstrip("\n\r")
+    if not s.strip():
+        return _unparsed_line(raw)
+
+    m = _RE_ISO_TS.match(s)
+    if m:
+        date_s, time_s, tail = m.group(1), m.group(2), (m.group(3) or "").lstrip()
+        level = "—"
+        message = tail
+        if tail.startswith("["):
+            bm = re.match(r"^\[(\w+)\]\s*(.*)$", tail, re.DOTALL)
+            if bm:
+                level = bm.group(1)
+                message = bm.group(2)
+        try:
+            naive = datetime.strptime(f"{date_s} {time_s}", "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return _unparsed_line(raw)
+        if assume_utc:
+            aware = naive.replace(tzinfo=timezone.utc)
+        else:
+            aware = naive.replace(tzinfo=display_tz)
+        local = aware.astimezone(display_tz)
+        return ParsedLogLine(
+            local.strftime("%d.%m.%Y"),
+            local.strftime("%H:%M:%S"),
+            level,
+            message if message.strip() else "—",
+            aware,
+            raw,
+        )
+
+    m = _RE_DMY_TS.match(s)
+    if m:
+        dmy_time = m.group(1)
+        tail = (m.group(2) or "").lstrip()
+        level = "—"
+        message = tail
+        if tail.startswith("["):
+            bm = re.match(r"^\[(\w+)\]\s*(.*)$", tail, re.DOTALL)
+            if bm:
+                level = bm.group(1)
+                message = bm.group(2)
+        try:
+            naive = datetime.strptime(dmy_time, "%d.%m.%Y %H:%M:%S")
+        except ValueError:
+            return _unparsed_line(raw)
+        aware = naive.replace(tzinfo=display_tz)
+        local = aware.astimezone(display_tz)
+        return ParsedLogLine(
+            local.strftime("%d.%m.%Y"),
+            local.strftime("%H:%M:%S"),
+            level,
+            message if message.strip() else "—",
+            aware,
+            raw,
+        )
+
+    return _unparsed_line(raw)
+
+
+def parse_events_log_for_table(raw: str) -> list[ParsedLogLine]:
+    """
+    Все строки файла → список; сортировка от новых к старым по разобранному времени.
+    Служебные сообщения об отсутствии файла — одна строка таблицы без sort_key.
+    """
+    if not raw or raw.startswith("Файл лога не найден") or raw.startswith("Не удалось прочитать"):
+        return [_unparsed_line(raw)]
+
+    tz = _display_tz()
+    assume = _parse_as_utc()
+    out: list[ParsedLogLine] = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        out.append(parse_events_log_line(line, display_tz=tz, assume_utc=assume))
+
+    min_utc = datetime.min.replace(tzinfo=timezone.utc)
+
+    def sk(pl: ParsedLogLine) -> datetime:
+        return pl.sort_key if pl.sort_key is not None else min_utc
+
+    out.sort(key=sk, reverse=True)
+    return out
+
+
+def parse_ui_date_param(raw: str) -> date | None:
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        return None
+
+
+def filter_parsed_lines_by_local_date(
+    lines: list[ParsedLogLine],
+    date_from: date | None,
+    date_to: date | None,
+    display_tz: ZoneInfo,
+) -> list[ParsedLogLine]:
+    """Фильтр по календарной дате в display_tz (как поля «с даты / по дату» в UI)."""
+    if date_from is None and date_to is None:
+        return lines
+    out: list[ParsedLogLine] = []
+    for pl in lines:
+        if pl.sort_key is None:
+            continue
+        local_d = pl.sort_key.astimezone(display_tz).date()
+        if date_from and local_d < date_from:
+            continue
+        if date_to and local_d > date_to:
+            continue
+        out.append(pl)
+    return out
+
+
+def events_log_to_csv_bytes(lines: list[ParsedLogLine], *, max_rows: int = 50_000) -> bytes:
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["date", "time", "level", "message"])
+    for pl in lines[:max_rows]:
+        msg = pl.message.replace("\n", " ").replace("\r", " ")
+        if len(msg) > 8000:
+            msg = msg[:7997] + "…"
+        writer.writerow([pl.date_ui, pl.time_ui, pl.level, msg])
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
 def format_events_log_for_ui(raw: str) -> str:

@@ -24,7 +24,7 @@ from collections import defaultdict, deque
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, available_timezones
 from jinja2 import Environment, FileSystemLoader
@@ -33,11 +33,11 @@ _ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT / "src"))
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,7 +76,13 @@ from admin.crud_events_log import (
     want_admin_events_log_crud,
 )
 from dash_service_display import service_card_context
-from events_log_display import admin_events_log_timestamp_now, format_events_log_for_ui
+from events_log_display import (
+    admin_events_log_timestamp_now,
+    events_log_to_csv_bytes,
+    filter_parsed_lines_by_local_date,
+    parse_events_log_for_table,
+    parse_ui_date_param,
+)
 from ops.docker_control import DockerControlError, control_service, get_service_status
 from ui_datetime import bot_display_timezone, format_datetime_ui
 
@@ -89,17 +95,6 @@ _jinja_env = Environment(
     cache_size=0,
 )
 _jinja_env.filters["dt_ui"] = format_datetime_ui
-
-
-def _audit_json_pretty(value):
-    if value is None:
-        return ""
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, indent=2)
-    return str(value)
-
-
-_jinja_env.filters["audit_json"] = _audit_json_pretty
 
 
 def _admin_asset_version() -> str:
@@ -364,6 +359,69 @@ def _read_log_tail(path: Path, *, max_lines: int = 400, max_bytes: int = 256_000
         return "\n".join(lines[-max_lines:]) if lines else ""
     except OSError as e:
         return f"Не удалось прочитать лог: {e}"
+
+
+def _admin_audit_log_path() -> Path | None:
+    raw = (os.getenv("ADMIN_AUDIT_LOG_PATH") or "").strip()
+    if raw.lower() in ("-", "none", "off", "false", "0"):
+        return None
+    if not raw:
+        return _ROOT / "data" / "admin_audit.log"
+    p = Path(raw)
+    return p if p.is_absolute() else _ROOT / p
+
+
+def _append_audit_file_line(message: str) -> None:
+    path = _admin_audit_log_path()
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ts = admin_events_log_timestamp_now()
+        line = f"{ts} [AUDIT] {(message or '').strip()}\n"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+    except OSError as e:
+        logger.warning("Не удалось записать файл аудита (%s): %s", path, e)
+
+
+def _admin_events_log_scan_bytes() -> int:
+    raw = (os.getenv("ADMIN_EVENTS_LOG_SCAN_BYTES") or str(8 * 1024 * 1024)).strip()
+    try:
+        n = int(raw)
+    except ValueError:
+        return 8 * 1024 * 1024
+    return max(64 * 1024, min(n, 64 * 1024 * 1024))
+
+
+def _read_events_log_scan(path: Path, *, max_bytes: int) -> tuple[str, bool]:
+    """
+    Читает файл событий целиком или хвост (если больше max_bytes).
+    Возвращает (текст, truncated): при усечении первая строка может быть обрезана и отбрасывается.
+    """
+    try:
+        if not path.is_file():
+            return (
+                f"Файл лога не найден: {path}\n"
+                "Проверьте LOG_TO_FILE у бота, том data/ и переменную ADMIN_EVENTS_LOG_PATH.",
+            ), False
+        size = path.stat().st_size
+        with path.open("rb") as f:
+            if size <= max_bytes:
+                data = f.read()
+                truncated = False
+            else:
+                f.seek(max(0, size - max_bytes))
+                data = f.read()
+                truncated = True
+        text = data.decode("utf-8", errors="replace")
+        if truncated:
+            nl = text.find("\n")
+            if nl != -1 and nl + 1 < len(text):
+                text = text[nl + 1 :]
+        return text, truncated
+    except OSError as e:
+        return f"Не удалось прочитать лог: {e}", False
 
 
 def _append_ops_to_events_log(message: str) -> None:
@@ -694,6 +752,14 @@ async def _audit_op(
         detail=(detail or "")[:2000] or None,
     )
     session.add(row)
+    d = ((detail or "").replace("\n", " "))[:1800]
+    parts = [f"op={action}", f"status={status}"]
+    al = (actor_login or "").strip()
+    if al:
+        parts.append(f"actor={al}")
+    if d:
+        parts.append(f"detail={d}")
+    _append_audit_file_line(" ".join(parts))
     logger.info(
         json.dumps(
             {
@@ -768,24 +834,20 @@ async def _persist_admin_crud_audit(
     crud_action: str,
     details: dict | None,
 ) -> None:
-    if not want_admin_audit_crud_db():
-        return
     actor_login = (getattr(request_actor, "login", None) or "").strip().lower() or None
     cleaned = sanitize_audit_details(details or {})
     entity_id = _infer_crud_entity_id(entity_type, details)
     et = (entity_type or "unknown")[:64]
     ca = (crud_action or "unknown")[:32]
-    row = BotOpsAudit(
-        actor_login=actor_login,
-        action="ADMIN_CRUD",
-        status="ok",
-        detail=None,
-        entity_type=et or None,
-        entity_id=entity_id,
-        crud_action=ca or None,
-        details_json=cleaned if cleaned else None,
-    )
-    session.add(row)
+    dj = json.dumps(cleaned, ensure_ascii=False) if cleaned else ""
+    if len(dj) > 2000:
+        dj = dj[:1997] + "..."
+    aud = f"ADMIN_CRUD entity={et} action={ca} actor={actor_login or ''}"
+    if entity_id is not None:
+        aud += f" entity_id={entity_id}"
+    if dj:
+        aud += f" details={dj}"
+    _append_audit_file_line(aud)
     logger.info(
         json.dumps(
             {
@@ -802,6 +864,19 @@ async def _persist_admin_crud_audit(
             ensure_ascii=False,
         )
     )
+    if not want_admin_audit_crud_db():
+        return
+    row = BotOpsAudit(
+        actor_login=actor_login,
+        action="ADMIN_CRUD",
+        status="ok",
+        detail=None,
+        entity_type=et or None,
+        entity_id=entity_id,
+        crud_action=ca or None,
+        details_json=cleaned if cleaned else None,
+    )
+    session.add(row)
 
 
 async def _maybe_log_admin_crud(
@@ -3216,68 +3291,15 @@ async def routes_version_del(
     return RedirectResponse("/routes/version", status_code=303)
 
 
-# --- События (хвост файла лога бота) ---
+# --- События (файл лога: таблица + CSV; аудит панели — отдельный файл ADMIN_AUDIT_LOG_PATH) ---
 
 
-def _parse_audit_date_param(raw: str) -> date | None:
-    s = (raw or "").strip()
-    if not s:
-        return None
-    try:
-        return date.fromisoformat(s[:10])
-    except ValueError:
-        return None
-
-
-def _build_audit_where(
-    *,
-    actor_substr: str = "",
-    entity_type_substr: str = "",
-    action_kind: str = "",
-    date_from_s: str = "",
-    date_to_s: str = "",
-):
-    parts: list = []
-    a = actor_substr.strip().lower()
-    if a:
-        parts.append(BotOpsAudit.actor_login.ilike(f"%{a}%"))
-    et = entity_type_substr.strip()
-    if et:
-        parts.append(BotOpsAudit.entity_type.ilike(f"%{et}%"))
-    ak = action_kind.strip().lower()
-    if ak == "crud":
-        parts.append(BotOpsAudit.action == "ADMIN_CRUD")
-    elif ak == "ops":
-        parts.append(BotOpsAudit.action != "ADMIN_CRUD")
-    df = _parse_audit_date_param(date_from_s)
-    d_to = _parse_audit_date_param(date_to_s)
-    tz = bot_display_timezone()
-    if df:
-        start_utc = datetime.combine(df, time.min, tzinfo=tz).astimezone(timezone.utc)
-        parts.append(BotOpsAudit.created_at >= start_utc)
-    if d_to:
-        end_excl = datetime.combine(d_to + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc)
-        parts.append(BotOpsAudit.created_at < end_excl)
-    if not parts:
-        return None
-    return and_(*parts)
-
-
-def _audit_filter_query_dict(
-    actor: str,
-    entity_type: str,
-    action_kind: str,
+def _events_filter_query_dict(
     date_from: str,
     date_to: str,
     page_size: int,
 ) -> dict[str, str]:
     d: dict[str, str] = {"page_size": str(page_size)}
-    if actor.strip():
-        d["actor"] = actor.strip()
-    if entity_type.strip():
-        d["entity_type"] = entity_type.strip()
-    if action_kind.strip():
-        d["action_kind"] = action_kind.strip()
     if date_from.strip():
         d["date_from"] = date_from.strip()
     if date_to.strip():
@@ -3285,17 +3307,34 @@ def _audit_filter_query_dict(
     return d
 
 
+def _load_filtered_event_lines(date_from_s: str, date_to_s: str):
+    path = _admin_events_log_path()
+    raw, truncated = _read_events_log_scan(path, max_bytes=_admin_events_log_scan_bytes())
+    parsed = parse_events_log_for_table(raw)
+    tz = bot_display_timezone()
+    df = parse_ui_date_param(date_from_s)
+    d_to = parse_ui_date_param(date_to_s)
+    if (
+        len(parsed) == 1
+        and parsed[0].sort_key is None
+        and (
+            "Файл лога не найден" in (parsed[0].message or "")
+            or "Не удалось прочитать" in (parsed[0].message or "")
+        )
+    ):
+        filtered = parsed
+    else:
+        filtered = filter_parsed_lines_by_local_date(parsed, df, d_to, tz)
+    return filtered, truncated, path
+
+
 @app.get("/events", response_class=HTMLResponse)
 async def events_page(
     request: Request,
-    actor: str = "",
-    entity_type: str = "",
-    action_kind: str = "",
     date_from: str = "",
     date_to: str = "",
     page: int = 1,
     page_size: int = 50,
-    session: AsyncSession = Depends(get_session),
 ):
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -3310,28 +3349,14 @@ async def events_page(
         page_size_i = 50
     page_size_i = min(200, max(5, page_size_i))
 
-    wc = _build_audit_where(
-        actor_substr=actor,
-        entity_type_substr=entity_type,
-        action_kind=action_kind,
-        date_from_s=date_from,
-        date_to_s=date_to,
-    )
-    cnt_stmt = select(func.count()).select_from(BotOpsAudit)
-    if wc is not None:
-        cnt_stmt = cnt_stmt.where(wc)
-    total = int((await session.execute(cnt_stmt)).scalar_one() or 0)
+    rows, truncated, log_path = _load_filtered_event_lines(date_from, date_to)
+    total = len(rows)
     total_pages = max(1, (total + page_size_i - 1) // page_size_i) if total > 0 else 1
     page_i = max(1, min(page_i, total_pages))
     offset = (page_i - 1) * page_size_i
+    page_rows = rows[offset : offset + page_size_i]
 
-    stmt = select(BotOpsAudit).order_by(BotOpsAudit.created_at.desc())
-    if wc is not None:
-        stmt = stmt.where(wc)
-    stmt = stmt.offset(offset).limit(page_size_i)
-    rows = list((await session.execute(stmt)).scalars().all())
-
-    qdict = _audit_filter_query_dict(actor, entity_type, action_kind, date_from, date_to, page_size_i)
+    qdict = _events_filter_query_dict(date_from, date_to, page_size_i)
     qs_base = urlencode(qdict)
     events_filter_link_prefix = f"/events?{qs_base}&" if qs_base else "/events?"
 
@@ -3339,30 +3364,19 @@ async def events_page(
         request,
         "events.html",
         {
-            "rows": rows,
+            "rows": page_rows,
             "total": total,
             "page": page_i,
             "page_size": page_size_i,
             "total_pages": total_pages,
-            "filter_actor": actor,
-            "filter_entity_type": entity_type,
-            "filter_action_kind": action_kind,
             "filter_date_from": date_from,
             "filter_date_to": date_to,
             "events_filter_link_prefix": events_filter_link_prefix,
             "export_qs": qs_base,
+            "events_log_path": str(log_path),
+            "events_log_truncated": truncated,
         },
     )
-
-
-@app.get("/events/tail", response_class=HTMLResponse)
-async def events_log_tail(request: Request):
-    user = getattr(request.state, "current_user", None)
-    if not user or getattr(user, "role", "") != "admin":
-        raise HTTPException(403, "Только admin")
-    raw = _read_log_tail(_admin_events_log_path())
-    text = format_events_log_for_ui(raw)
-    return HTMLResponse(f'<pre class="log-tail" id="events-log-pre">{html_escape(text)}</pre>')
 
 
 @app.get("/audit")
@@ -3379,85 +3393,19 @@ async def audit_legacy_redirect(request: Request):
 @app.get("/events/export.csv")
 async def events_export_csv(
     request: Request,
-    actor: str = "",
-    entity_type: str = "",
-    action_kind: str = "",
     date_from: str = "",
     date_to: str = "",
-    session: AsyncSession = Depends(get_session),
 ):
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
-    wc = _build_audit_where(
-        actor_substr=actor,
-        entity_type_substr=entity_type,
-        action_kind=action_kind,
-        date_from_s=date_from,
-        date_to_s=date_to,
-    )
-    stmt = select(BotOpsAudit).order_by(BotOpsAudit.created_at.desc())
-    if wc is not None:
-        stmt = stmt.where(wc)
-    stmt = stmt.limit(5000)
-    rows = list((await session.execute(stmt)).scalars().all())
-
-    import csv
-    import io
-
-    def gen_bytes():
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow(
-            [
-                "created_at_utc",
-                "actor",
-                "action",
-                "status",
-                "entity_type",
-                "entity_id",
-                "crud_action",
-                "detail",
-                "details_json",
-            ]
-        )
-        yield buf.getvalue().encode("utf-8")
-        buf.seek(0)
-        buf.truncate(0)
-        for row in rows:
-            dj = row.details_json
-            if dj is None:
-                dj_s = ""
-            elif isinstance(dj, dict):
-                dj_s = json.dumps(dj, ensure_ascii=False)
-            else:
-                dj_s = str(dj)
-            writer.writerow(
-                [
-                    row.created_at.isoformat() if row.created_at else "",
-                    row.actor_login or "",
-                    row.action,
-                    row.status,
-                    row.entity_type or "",
-                    row.entity_id if row.entity_id is not None else "",
-                    row.crud_action or "",
-                    (row.detail or "").replace("\n", " ")[:2000],
-                    dj_s,
-                ]
-            )
-            yield buf.getvalue().encode("utf-8")
-            buf.seek(0)
-            buf.truncate(0)
-
-    def gen_bom():
-        yield "\ufeff".encode("utf-8")
-        yield from gen_bytes()
-
+    rows, _truncated, _path = _load_filtered_event_lines(date_from, date_to)
+    body = events_log_to_csv_bytes(rows, max_rows=50_000)
     stamp = _now_utc().strftime("%Y%m%d")
-    return StreamingResponse(
-        gen_bom(),
+    return Response(
+        content=body,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="events_audit_{stamp}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="events_log_{stamp}.csv"'},
     )
 
 

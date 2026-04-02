@@ -204,7 +204,7 @@ python3 bot.py
 | **bot** | Образ из `Dockerfile` (корневой `bot.py` + `src/`), том `./data` → `/app/data`, `.env` только для чтения; healthcheck: `python -c "import bot"` |
 | **postgres** | PostgreSQL 16, том `postgres_data`; `DATABASE_URL` в **bot** и **admin** |
 | **docker-socket-proxy** | Ограниченный прокси к Docker API для runtime-control из admin (без прямого монтирования raw socket в admin). Если Start/Stop не срабатывают, на дашборде в уведомлении показывается текст ошибки Docker; см. комментарии к переменным `DOCKER_*` в `.env.example` (в том числе `DOCKER_TARGET_CONTAINER_SUBSTRING`). |
-| **admin** | Панель (`admin_main.py`, FastAPI + Jinja2 + HTMX): **дашборд** (`/dashboard`, тот же экран на `/`), **группы** (в т.ч. маршруты по статусу Redmine в комнату группы), **пользователи**, **настройки** (`/onboarding`), **события** (`/events`: таблица **`bot_ops_audit`** с фильтрами и CSV **`/events/export.csv`**, ниже хвост файла лога — **`ADMIN_EVENTS_LOG_PATH`** / `data/bot.log`, **`ADMIN_EVENTS_LOG_PARSE_AS_UTC`**, строки **`[ADMIN]`** при Start/Stop/Restart); маршруты по версии — URL **`/routes/version`** (без пункта в меню); runtime-control бота; **CSP** (`ADMIN_ENABLE_CSP` / `ADMIN_CSP_POLICY`); **`ADMIN_PORT`** (8080); при старте `alembic upgrade head`; том **`./data`** у сервиса **с записью** (чтобы дописывать события и читать `runtime_status.json`) |
+| **admin** | Панель (`admin_main.py`, FastAPI + Jinja2 + HTMX): **дашборд** (`/dashboard`, тот же экран на `/`), **группы** (в т.ч. маршруты по статусу Redmine в комнату группы), **пользователи**, **настройки** (`/onboarding`), **события** (`/events`: таблица и CSV по файлу **`ADMIN_EVENTS_LOG_PATH`** / `data/bot.log`, фильтр по датам, **`ADMIN_EVENTS_LOG_SCAN_BYTES`**, **`ADMIN_EVENTS_LOG_PARSE_AS_UTC`**, строки **`[ADMIN]`**; аудит панели — отдельный **`ADMIN_AUDIT_LOG_PATH`** / `data/admin_audit.log`); маршруты по версии — URL **`/routes/version`** (без пункта в меню); runtime-control бота; **CSP** (`ADMIN_ENABLE_CSP` / `ADMIN_CSP_POLICY`); **`ADMIN_PORT`** (8080); при старте `alembic upgrade head`; том **`./data`** у сервиса **с записью** (чтобы дописывать логи и читать `runtime_status.json`) |
 
 ### Подготовка `.env`
 
@@ -244,14 +244,14 @@ docker compose down
 
 **Пошаговое руководство для администраторов** (развёртывание, первый вход, пароли, порты, локальный `DATABASE_URL`): [docs/ADMINISTRATOR_GUIDE.md](docs/ADMINISTRATOR_GUIDE.md).
 
-Что попадает в раздел **События** (`[ADMIN]`, stdout, БД) и как устроен аудит: [docs/ADMIN_EVENTS_AND_AUDIT_PLAN.md](docs/ADMIN_EVENTS_AND_AUDIT_PLAN.md).
+Что попадает в раздел **События** (файл лога), отдельный **файл аудита** `[AUDIT]`, stdout и опционально БД: [docs/ADMIN_EVENTS_AND_AUDIT_PLAN.md](docs/ADMIN_EVENTS_AND_AUDIT_PLAN.md).
 
 Онбординг в **личке Matrix** (`!start`, шаги, шифрование ключа, `!change` / `!cancel`): [docs/MATRIX_ONBOARDING_PLAN.md](docs/MATRIX_ONBOARDING_PLAN.md). Включение: `MATRIX_ONBOARDING_ENABLED`, мастер-ключ `APP_MASTER_KEY` (32 байта) у **bot** и **admin**.
 
 1. После `docker compose up` откройте `http://<хост>:8080/setup` и создайте первого admin (только если admin ещё нет в БД).
 2. Вход в админку: `http://<хост>:8080/login` по логину и паролю.
 3. Сброс пароля админки: другой администратор (**Аккаунты панели**) или скрипт `scripts/reset_admin_password.py` при доступе к БД; самообслуживания по ссылке «забыли пароль» нет.
-4. Заполните пользователей и **группы** в админке (маршруты по **статусу** Redmine задаются в карточке группы — комната группы и список статусов; маршруты по **версии** — отдельная таблица, страница **`/routes/version`** при необходимости). Секреты — в **Настройках** (`/onboarding`). Хвост лога бота в разделе **События**: путь задаётся **`ADMIN_EVENTS_LOG_PATH`**, иначе `data/bot.log`. После изменений в БД перезапустите сервис **`bot`** (он перечитывает конфиг при старте).
+4. Заполните пользователей и **группы** в админке (маршруты по **статусу** Redmine задаются в карточке группы — комната группы и список статусов; маршруты по **версии** — отдельная таблица, страница **`/routes/version`** при необходимости). Секреты — в **Настройках** (`/onboarding`). Раздел **События** строится по файлу лога (**`ADMIN_EVENTS_LOG_PATH`**, иначе `data/bot.log`); журнал аудита панели — **`ADMIN_AUDIT_LOG_PATH`** (см. [ADMINISTRATOR_GUIDE.md](docs/ADMINISTRATOR_GUIDE.md)). После изменений в БД перезапустите сервис **`bot`** (он перечитывает конфиг при старте).
 5. Для дедупликации на нескольких инстансах используется lease по пользователю (`bot_user_leases`) и state в `bot_issue_state`.
 
 Миграции схемы БД выполняются при старте сервиса **admin**: `alembic upgrade head`.
@@ -317,7 +317,9 @@ REDMINE_API_KEY=your_redmine_api_key
 | Переменная | Назначение |
 |------------|------------|
 | `ADMIN_LOGINS` | Список разрешённых логинов панели (через запятую); пусто = без ограничения |
-| `ADMIN_EVENTS_LOG_PATH` | Файл лога для `/events` в админке; пусто → `data/bot.log` от корня приложения админки |
+| `ADMIN_EVENTS_LOG_PATH` | Файл лога для таблицы и CSV на `/events`; пусто → `data/bot.log` от корня приложения админки |
+| `ADMIN_EVENTS_LOG_SCAN_BYTES` | Сколько байт читать с конца файла (если файл больше — хвост); по умолчанию 8 МиБ |
+| `ADMIN_AUDIT_LOG_PATH` | Отдельный файл строк `[AUDIT]` (Docker + CRUD); пусто → `data/admin_audit.log`; `-` / `none` — не писать |
 | `ADMIN_EVENTS_LOG_PARSE_AS_UTC` | `1` (по умолчанию): префикс `YYYY-MM-DD` в файле считать UTC и показывать в `BOT_TIMEZONE`; `0` — время в файле уже в `BOT_TIMEZONE` |
 | `ADMIN_EVENTS_LOG_CRUD` | `1` / `true` / `yes` / `on` — дописывать в тот же файл строки `CRUD …` (пользователи, группы, маршруты, «Мои настройки»); по умолчанию выкл. |
 | `ADMIN_AUDIT_CRUD_DB` | Не задано — дублировать CRUD в **`bot_ops_audit`** (как при включённом файле); `0` — не писать в БД; `1` — писать в БД (можно без `ADMIN_EVENTS_LOG_CRUD`). |

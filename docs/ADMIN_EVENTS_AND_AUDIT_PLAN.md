@@ -6,9 +6,10 @@
 
 | Канал | Где смотреть | Кто пишет | Назначение |
 |--------|----------------|-----------|------------|
-| **Файл «События»** | Страница `/events`, хвост `ADMIN_EVENTS_LOG_PATH` (часто общий с ботом `data/bot.log`) | В основном **процесс бота** (`RotatingFileHandler`); строки **`[ADMIN]`** дописывает только **процесс admin** (`_append_ops_to_events_log`) | Единая лента для админа: цикл бота + явные админ-действия |
+| **Файл «События»** | Страница `/events` (таблица + CSV по содержимому), путь `ADMIN_EVENTS_LOG_PATH` (часто общий с ботом `data/bot.log`) | В основном **процесс бота** (`RotatingFileHandler`); строки **`[ADMIN]`** дописывает **процесс admin** (`_append_ops_to_events_log`) | Единая лента для админа: цикл бота + явные админ-действия |
+| **Файл аудита `[AUDIT]`** | На диске: `ADMIN_AUDIT_LOG_PATH` или `data/admin_audit.log` (в UI не показывается) | `admin_main._append_audit_file_line` из `_audit_op` и `_persist_admin_crud_audit` | Строковый журнал операций Docker и CRUD без смешивания с `bot.log` |
 | **Stdout / docker logs** контейнера **admin** | `docker compose logs admin` | `uvicorn` + `logging` в `admin_main` (`logger.info` / `warning`) | Отладка, централизованный сбор логов (Loki, ELK и т.д.) |
-| **Таблица БД `bot_ops_audit`** | Страница **`/events`** (таблица + фильтры + CSV) | `admin_main._audit_op`, `_persist_admin_crud_audit` | Структурированный аудит выбранных операций |
+| **Таблица БД `bot_ops_audit`** | Только БД (опционально, SQL/отчёты); в панели **не** отображается | `admin_main._audit_op`, `_persist_admin_crud_audit` при включённом `ADMIN_AUDIT_CRUD_DB` | Структурированный аудит для запросов к Postgres |
 
 Строки вида `[INFO]`, `[WARNING]` в файле `bot.log` — это **бот**, а не панель. Строки **`[ADMIN]`** — только то, что явно вызвано из **admin** через `_append_ops_to_events_log`.
 
@@ -16,13 +17,14 @@
 
 | Канал | Назначение | Кто потребляет | Ретеншн (типично) |
 |-------|------------|----------------|-------------------|
-| **Файл `[ADMIN]` + хвост для `/events`** | Оперативный мониторинг: «что случилось недавно» в одном месте с логом бота | Админ в UI `/events` | Не календарный срок: у **бота** ротация по **`LOG_MAX_BYTES`** и **`LOG_BACKUP_COUNT`** (см. README); на диске примерно до **(1 + N) × размер** текущего файла. Раздел «События» показывает только **текущий** файл, не `bot.log.N`. |
+| **Файл событий + таблица `/events`** | Оперативный мониторинг: лог бота и `[ADMIN]` в одной ленте | Админ в UI `/events` | При большом файле — хвост **`ADMIN_EVENTS_LOG_SCAN_BYTES`**; ротация бота по **`LOG_MAX_BYTES`** / **`LOG_BACKUP_COUNT`**; в UI только **текущий** файл, не `bot.log.N`. |
+| **Файл `[AUDIT]`** | Аудит панели отдельно от `bot.log` | Админ на диске / внешний сбор | Задаётся политикой тома `data/` (ротацию можно настроить logrotate на хосте). |
 | **Stdout admin** | Централизованный сбор, алертинг по шаблонам | DevOps, SRE | Задаётся инфраструктурой (Docker logging driver, retention в Loki и т.д.) |
 | **`bot_ops_audit`** | Расследование инцидентов, отчётность, compliance | Админ, аудитор, скрипты | Политика на стороне БД: бессрочно, партиции или purge старше N дней |
 
 **Ключевой принцип:**
 
-> **Файл** — «посмотреть сейчас». **БД** — «доказать потом». **Stdout** — «собрать везде».
+> **Файл событий** — «посмотреть сейчас» в UI. **Файл `[AUDIT]`** — отдельный журнал действий панели. **БД** — «доказать потом» (SQL). **Stdout** — «собрать везде».
 
 ---
 
@@ -55,9 +57,11 @@
 
 ### 2.3. Таблица `bot_ops_audit` (Postgres)
 
-Заполняется **`_audit_op`** при операциях **Docker** над ботом (start / stop / restart, в т.ч. фоновый restart). В модели SQLAlchemy поле акторa называется **`actor_login`**, колонка в БД исторически — **`actor_email`** (`src/database/models.py`).
+Заполняется **`_audit_op`** при операциях **Docker** над ботом (start / stop / restart, в т.ч. фоновый restart). При включённом **`ADMIN_AUDIT_CRUD_DB`** туда же пишет **`_persist_admin_crud_audit`** (`action=ADMIN_CRUD`, поля `entity_*`, `details_json`). В веб-панели эта таблица **не показывается** — только запросы к БД и внешние отчёты. В модели SQLAlchemy поле актора называется **`actor_login`**, колонка в БД исторически — **`actor_email`** (`src/database/models.py`).
 
-**Нет** строк про CRUD пользователей/групп/маршрутов.
+### 2.3.1. Файл `[AUDIT]` (`ADMIN_AUDIT_LOG_PATH`)
+
+Отдельный текстовый журнал: **`_append_audit_file_line`** вызывается из **`_audit_op`** и **`_persist_admin_crud_audit`** (пока путь файла не отключён). Формат строки: `ДД.ММ.ГГГГ ЧЧ:ММ:СС [AUDIT] …`. Отключение: **`ADMIN_AUDIT_LOG_PATH=-`** (или `none` / `off` / `0` / `false`).
 
 ### 2.4. Лог процесса **бота** в тот же файл
 
@@ -238,10 +242,10 @@ log_audit_sync(event) → сразу файл + БД (критичные: Docker
 
 ## 11. Связанные файлы в репозитории
 
-- `admin_main.py` — `_append_ops_to_events_log`, `_audit_op`, `_maybe_log_admin_crud`, **`/events`** (таблица + лог), **`/events/export.csv`**, редиректы **`/audit`**, **`/audit/export.csv`**.
-- `templates/admin/events.html` — таблица `bot_ops_audit` и хвост файла лога.
+- `admin_main.py` — `_append_ops_to_events_log`, `_append_audit_file_line`, `_audit_op`, `_maybe_log_admin_crud`, **`/events`** (таблица по файлу + CSV), редиректы **`/audit`**, **`/audit/export.csv`**.
+- `templates/admin/events.html` — таблица по файлу событий (дата, время, уровень, сообщение).
 - `templates/admin/base.html` — пункт меню «События».
-- `src/events_log_display.py` — только **отображение** хвоста файла (формат даты, порядок строк).
+- `src/events_log_display.py` — разбор строк файла, фильтр по датам, CSV; устаревшее форматирование хвоста `format_events_log_for_ui` (если ещё используется).
 - `src/database/models.py` — `BotOpsAudit` (колонка акторa в БД: `actor_email`).
 - `docs/ADMINISTRATOR_GUIDE.md` — раздел «События» (`/events`).
 

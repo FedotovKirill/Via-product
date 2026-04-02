@@ -34,15 +34,15 @@ def test_audit_legacy_redirects_to_events_for_admin(client: TestClient):
     if not db_url.startswith("postgresql://"):
         pytest.skip("Тест требует Postgres (DATABASE_URL)")
     _setup_and_login_admin(client)
-    r = client.get("/audit?actor=test", follow_redirects=False)
+    r = client.get("/audit?date_from=2024-01-02", follow_redirects=False)
     if r.status_code not in (303, 302):
         pytest.skip("Нет доступа к редиректу /audit")
     loc = r.headers.get("location") or ""
     assert loc.startswith("/events")
-    assert "actor=test" in loc
+    assert "date_from=2024-01-02" in loc
 
 
-def test_events_page_includes_audit_table_and_log(client: TestClient):
+def test_events_page_includes_events_table(client: TestClient):
     db_url = os.getenv("DATABASE_URL", "")
     if not db_url.startswith("postgresql://"):
         pytest.skip("Тест требует Postgres (DATABASE_URL)")
@@ -51,9 +51,8 @@ def test_events_page_includes_audit_table_and_log(client: TestClient):
     if r.status_code != 200:
         pytest.skip("Нет доступа к /events")
     assert "События" in r.text
-    assert "Время" in r.text and "Актор" in r.text
-    assert "events-log" in r.text
-    assert "Хвост файла лога" in r.text
+    assert "Дата" in r.text and "Уровень" in r.text and "Сообщение" in r.text
+    assert "Источник:" in r.text
 
 
 def test_health_ok(client: TestClient):
@@ -822,16 +821,6 @@ def test_user_and_group_version_routes_add_and_delete(client: TestClient):
     )
     assert del_gr.status_code == 303
     assert "version_msg=deleted" in (del_gr.headers.get("location") or "")
-
-
-def test_events_tail_ok_when_authed(client: TestClient):
-    db_url = os.getenv("DATABASE_URL", "")
-    if not db_url or not db_url.startswith("postgresql://"):
-        pytest.skip("Тест требует Postgres (DATABASE_URL)")
-    _setup_and_login_admin(client)
-    r = client.get("/events/tail", follow_redirects=False)
-    assert r.status_code == 200
-    assert "<pre " in r.text
 
 
 def test_ops_restart_accepts_and_redirects(client: TestClient, monkeypatch):
