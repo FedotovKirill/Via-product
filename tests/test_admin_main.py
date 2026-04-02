@@ -50,7 +50,7 @@ def test_forgot_password_redirects_to_login(client: TestClient):
 
 def test_admin_asset_version_helper(monkeypatch):
     monkeypatch.delenv("ADMIN_ASSET_VERSION", raising=False)
-    assert admin_main._admin_asset_version() == "4"
+    assert admin_main._admin_asset_version() == "5"
     monkeypatch.setenv("ADMIN_ASSET_VERSION", "build-xyz")
     assert admin_main._admin_asset_version() == "build-xyz"
 
@@ -107,6 +107,28 @@ def test_app_users_reset_password_policy_error_is_html_not_json(client: TestClie
     assert "text/html" in ct
     assert "application/json" not in ct
     assert "Пароль должен содержать минимум 12 символов" in pr.text
+
+
+def test_app_users_change_login_invalid_is_html(client: TestClient):
+    db_url = os.getenv("DATABASE_URL", "")
+    if not db_url or not db_url.startswith("postgresql://"):
+        pytest.skip("Тест требует Postgres (DATABASE_URL)")
+    _setup_and_login_admin(client)
+    r = client.get("/app-users")
+    if r.status_code != 200:
+        pytest.skip("Нет доступа к /app-users")
+    m = re.search(r'action="/app-users/([a-f0-9-]{36})/change-login-admin"', r.text)
+    assert m, "ожидали форму смены логина с UUID"
+    uid = m.group(1)
+    token = client.cookies.get("admin_csrf", "")
+    pr = client.post(
+        f"/app-users/{uid}/change-login-admin",
+        data={"new_login": "ab", "csrf_token": token},
+        follow_redirects=False,
+    )
+    assert pr.status_code == 200
+    assert "text/html" in (pr.headers.get("content-type") or "").lower()
+    assert "латиница" in pr.text or "255" in pr.text
 
 
 def test_dash_service_strip_for_admin(client: TestClient, monkeypatch):

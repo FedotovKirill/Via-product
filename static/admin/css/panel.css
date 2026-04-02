@@ -88,7 +88,7 @@ body {
   filter: none;
 }
 .sidebar-title { font-size: 1.36rem; font-weight: 600; letter-spacing: -0.015em; }
-.sidebar-sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.1rem; }
+.sidebar-sub { font-size: 1.6rem; font-weight: 500; color: var(--muted); margin-top: 0.15rem; line-height: 1.2; }
 .sidebar-nav {
   flex: 1;
   padding: 0.75rem;
@@ -390,7 +390,8 @@ td.cell-form form {
   gap: 0.5rem;
   align-items: center;
 }
-td.cell-form input[type="password"] {
+td.cell-form input[type="password"],
+td.cell-form input[type="text"] {
   width: auto;
   min-width: 10rem;
   max-width: 18rem;

@@ -82,7 +82,7 @@ _jinja_env.filters["dt_ui"] = format_datetime_ui
 def _admin_asset_version() -> str:
     """Query string для cache-bust ссылок на `/static/...` (см. `ADMIN_ASSET_VERSION`)."""
     v = (os.getenv("ADMIN_ASSET_VERSION") or "").strip()
-    return v if v else "4"
+    return v if v else "5"
 
 
 _jinja_env.globals["asset_version"] = _admin_asset_version
@@ -1377,6 +1377,76 @@ async def app_user_reset_password_admin(
     logger.info(
         "admin_password_reset target=%s actor=%s",
         mask_identifier(target.login),
+        mask_identifier(current.login),
+    )
+    return RedirectResponse("/app-users", status_code=303)
+
+
+@app.post("/app-users/{user_id}/change-login-admin")
+async def app_user_change_login_admin(
+    request: Request,
+    user_id: str,
+    new_login: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
+    session: AsyncSession = Depends(get_session),
+):
+    _verify_csrf(request, csrf_token)
+    current = getattr(request.state, "current_user", None)
+    if not current or getattr(current, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+    uid = uuid.UUID(user_id)
+    q = await session.execute(select(BotAppUser).where(BotAppUser.id == uid))
+    target = q.scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "Пользователь не найден")
+
+    async def _err(msg: str):
+        rows = await session.execute(select(BotAppUser).order_by(BotAppUser.login))
+        users = list(rows.scalars().all())
+        csrf_out, set_cookie = _ensure_csrf(request)
+        resp = templates.TemplateResponse(
+            request,
+            "app_users.html",
+            {
+                "users": users,
+                "csrf_token": csrf_out,
+                "login_change_error": msg,
+                "login_change_old_login": target.login,
+            },
+        )
+        if set_cookie:
+            resp.set_cookie(CSRF_COOKIE_NAME, csrf_out, httponly=True, secure=COOKIE_SECURE, samesite="lax")
+        return resp
+
+    new_login_n = _normalize_login(new_login)
+    fmt_ok, fmt_err = _login_format_ok(new_login_n)
+    if not fmt_ok:
+        return await _err(fmt_err or "Некорректный логин")
+    if not _login_allowed(new_login_n):
+        return await _err("Этот логин не разрешён (проверьте ADMIN_LOGINS в окружении).")
+    if new_login_n == target.login:
+        return RedirectResponse("/app-users", status_code=303)
+    taken = await session.execute(
+        select(BotAppUser.id).where(BotAppUser.login == new_login_n, BotAppUser.id != uid).limit(1)
+    )
+    if taken.scalar_one_or_none() is not None:
+        return await _err("Логин уже занят.")
+
+    old_login = target.login
+    target.login = new_login_n
+    await session.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == target.id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(requested_login=new_login_n)
+    )
+    await session.commit()
+    logger.info(
+        "admin_login_changed old=%s new=%s actor=%s",
+        mask_identifier(old_login),
+        mask_identifier(new_login_n),
         mask_identifier(current.login),
     )
     return RedirectResponse("/app-users", status_code=303)
