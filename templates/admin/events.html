@@ -14,4 +14,25 @@
     <pre class="log-tail muted">Загрузка…</pre>
   </div>
 </div>
+<script>
+(function () {
+  var wrap = document.getElementById("events-log");
+  if (!wrap) return;
+  wrap.addEventListener("htmx:beforeSwap", function () {
+    var pre = document.getElementById("events-log-pre");
+    if (pre) {
+      wrap.dataset.logScrollTop = String(pre.scrollTop);
+    }
+  });
+  wrap.addEventListener("htmx:afterSwap", function () {
+    var pre = document.getElementById("events-log-pre");
+    var saved = wrap.dataset.logScrollTop;
+    if (pre && saved !== undefined && saved !== "") {
+      var n = parseInt(saved, 10);
+      pre.scrollTop = Number.isFinite(n) ? n : 0;
+      delete wrap.dataset.logScrollTop;
+    }
+  });
+})();
+</script>
 {% endblock %}

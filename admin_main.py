@@ -66,6 +66,7 @@ from security import (
 from dash_service_display import service_card_context
 from events_log_display import admin_events_log_timestamp_now, format_events_log_for_ui
 from ops.docker_control import DockerControlError, control_service, get_service_status
+from ui_datetime import format_datetime_ui
 
 _templates_dir = str(_ROOT / "templates" / "admin")
 # В некоторых наборах версий Jinja2/Starlette кэш шаблонов может приводить к TypeError
@@ -75,6 +76,7 @@ _jinja_env = Environment(
     autoescape=True,
     cache_size=0,
 )
+_jinja_env.filters["dt_ui"] = format_datetime_ui
 
 
 def _admin_asset_version() -> str:
