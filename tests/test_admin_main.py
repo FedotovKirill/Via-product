@@ -50,7 +50,7 @@ def test_forgot_password_redirects_to_login(client: TestClient):
 
 def test_admin_asset_version_helper(monkeypatch):
     monkeypatch.delenv("ADMIN_ASSET_VERSION", raising=False)
-    assert admin_main._admin_asset_version() == "1"
+    assert admin_main._admin_asset_version() == "3"
     monkeypatch.setenv("ADMIN_ASSET_VERSION", "build-xyz")
     assert admin_main._admin_asset_version() == "build-xyz"
 
@@ -90,7 +90,15 @@ def test_dash_service_strip_for_admin(client: TestClient, monkeypatch):
     monkeypatch.setattr(
         admin_main,
         "get_service_status",
-        lambda: {"service": "bot", "state": "running", "running": True, "container_id": "deadbeef"},
+        lambda: {
+            "service": "bot",
+            "state": "running",
+            "running": True,
+            "container_id": "deadbeef",
+            "container_name": "proj-bot-1",
+            "docker_status": "running",
+            "started_at": "2026-01-01T12:00:00+00:00",
+        },
     )
     monkeypatch.setattr(
         admin_main,
@@ -99,8 +107,8 @@ def test_dash_service_strip_for_admin(client: TestClient, monkeypatch):
     )
     r = client.get("/dash/service-strip")
     assert r.status_code == 200
-    assert "веб-панели" in r.text
-    assert "running" in r.text
+    assert "Включен" in r.text or "состояние" in r.text
+    assert "Uptime" in r.text
 
 
 def test_admin_csp_value_env(monkeypatch):

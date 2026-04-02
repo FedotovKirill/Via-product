@@ -63,6 +63,7 @@ from security import (
     verify_password,
 )
 
+from dash_service_display import service_card_context
 from ops.docker_control import DockerControlError, control_service, get_service_status
 
 _templates_dir = str(_ROOT / "templates" / "admin")
@@ -78,7 +79,7 @@ _jinja_env = Environment(
 def _admin_asset_version() -> str:
     """Query string для cache-bust ссылок на `/static/...` (см. `ADMIN_ASSET_VERSION`)."""
     v = (os.getenv("ADMIN_ASSET_VERSION") or "").strip()
-    return v if v else "1"
+    return v if v else "3"
 
 
 _jinja_env.globals["asset_version"] = _admin_asset_version
@@ -369,9 +370,9 @@ def _group_display_name(groups_by_id: dict, group_id: int | None) -> str:
 
 
 _OPS_FLASH_MESSAGES: dict[str, str] = {
-    "stop_ok": "Docker принял остановку контейнера бота (или контейнер уже был остановлен). Счётчик «uptime панели» на дашборде — это работа веб-админки, а не бота.",
+    "stop_ok": "Docker принял остановку контейнера бота (или контейнер уже был остановлен).",
     "stop_error": "Не удалось остановить бот. Проверьте DOCKER_HOST, docker-socket-proxy и имя сервиса (DOCKER_TARGET_SERVICE, метки compose).",
-    "start_ok": "Docker принял запуск контейнера бота (или он уже был запущен). Счётчик uptime на карточке — у веб-панели admin, не процесса бота.",
+    "start_ok": "Docker принял запуск контейнера бота (или он уже был запущен).",
     "start_error": "Не удалось запустить бот. Проверьте Docker и настройки.",
     "restart_accepted": "Перезапуск бота запланирован (команда уходит в фоне).",
     "ops_commit_error": "Не удалось сохранить запись в журнал операций (БД). Состояние Docker смотрите в выводе compose / на дашборде.",
@@ -536,9 +537,6 @@ class _RedmineSearchBreaker:
 
 
 _redmine_search_breaker = _RedmineSearchBreaker()
-
-
-_process_started_at = time.monotonic()
 
 
 def _runtime_status_from_file() -> dict:
@@ -892,6 +890,7 @@ async def login_post(
         max_age=SESSION_TTL_SECONDS,
         path="/",
     )
+    _append_ops_to_events_log(f"Вход в панель login={mask_identifier(login_n)} ip={ip}")
     return resp
 
 
@@ -1046,6 +1045,8 @@ async def reset_password_post(
 
 @app.get("/logout")
 async def logout(request: Request, session: AsyncSession = Depends(get_session)):
+    cur = getattr(request.state, "current_user", None)
+    actor = mask_identifier(cur.login) if cur is not None else "?"
     token_raw = request.cookies.get(SESSION_COOKIE_NAME, "")
     if token_raw:
         try:
@@ -1056,6 +1057,7 @@ async def logout(request: Request, session: AsyncSession = Depends(get_session))
         except Exception:
             pass
 
+    _append_ops_to_events_log(f"Выход из панели login={actor}")
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return resp
@@ -1073,7 +1075,17 @@ async def index(
     try:
         runtime_docker = get_service_status()
     except DockerControlError as e:
-        runtime_docker = {"state": "error", "detail": str(e), "service": os.getenv("DOCKER_TARGET_SERVICE", "bot")}
+        runtime_docker = {
+            "state": "error",
+            "detail": str(e),
+            "service": os.getenv("DOCKER_TARGET_SERVICE", "bot"),
+            "container_name": "",
+            "docker_status": "",
+            "started_at": "",
+            "running": False,
+        }
+    tz = (os.getenv("BOT_TIMEZONE") or "Europe/Moscow").strip()
+    service_ctx = service_card_context(runtime_docker, runtime_file, tz)
     dash = await _dashboard_counts(session)
     integration_status = await _integration_status(session)
     ops_flash = _ops_flash_message(
@@ -1084,13 +1096,8 @@ async def index(
         request,
         "index.html",
         {
-            "runtime_status": {
-                "uptime_s": int(time.monotonic() - _process_started_at),
-                "live": True,
-                "ready": True,
-                "cycle": runtime_file,
-                "docker": runtime_docker,
-            },
+            "runtime_status": {"cycle": runtime_file},
+            "service_ctx": service_ctx,
             "dash": dash,
             "integration_status": integration_status,
             "ops_flash": ops_flash,
@@ -1100,7 +1107,7 @@ async def index(
 
 @app.get("/dash/service-strip", response_class=HTMLResponse)
 async def dash_service_strip(request: Request):
-    """Фрагмент дашборда: uptime процесса admin, Docker-состояние бота, хвост runtime_status (для HTMX poll)."""
+    """Фрагмент карточки «Сервис» (HTMX poll): Docker + runtime_status.json."""
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -1108,23 +1115,18 @@ async def dash_service_strip(request: Request):
     try:
         runtime_docker = get_service_status()
     except DockerControlError as e:
-        runtime_docker = {"state": "error", "detail": str(e), "service": os.getenv("DOCKER_TARGET_SERVICE", "bot")}
-    uptime_s = int(time.monotonic() - _process_started_at)
-    svc = html_escape(str(runtime_docker.get("service", "bot")))
-    st = html_escape(str(runtime_docker.get("state", "unknown")))
-    cname = runtime_docker.get("container_name") or ""
-    cname_html = f' <span class="muted">({html_escape(cname)})</span>' if cname else ""
-    cycle = runtime_file or {}
-    last_at = html_escape(str(cycle.get("last_cycle_at") or "—"))
-    dur = html_escape(str(cycle.get("last_cycle_duration_s") or "—"))
-    err_n = html_escape(str(cycle.get("error_count") or 0))
-    html = (
-        '<p class="muted">Uptime <strong>веб-панели</strong> (процесс admin): '
-        f"<strong>{uptime_s}с</strong> — растёт, пока работает контейнер админки; кнопки Start/Stop "
-        f"управляют <strong>контейнером бота</strong> в Docker, не этой панелью.</p>"
-        f"<p class=\"muted\">Бот (compose-сервис <strong>{svc}</strong>): состояние <strong>{st}</strong>{cname_html}.</p>"
-        f'<p class="muted">Последний цикл: {last_at}; длительность: {dur}с; ошибок: {err_n}.</p>'
-    )
+        runtime_docker = {
+            "state": "error",
+            "detail": str(e),
+            "service": os.getenv("DOCKER_TARGET_SERVICE", "bot"),
+            "container_name": "",
+            "docker_status": "",
+            "started_at": "",
+            "running": False,
+        }
+    tz = (os.getenv("BOT_TIMEZONE") or "Europe/Moscow").strip()
+    ctx = service_card_context(runtime_docker, runtime_file, tz)
+    html = _jinja_env.get_template("partials/service_metrics.html").render(service_ctx=ctx)
     return HTMLResponse(html)
 
 

@@ -69,7 +69,19 @@ def test_get_service_status_running(monkeypatch):
         if "/containers/json?" in url:
             return _Resp(200, json.dumps([{"Id": "abc123"}]))
         if "/containers/abc123/json" in url:
-            return _Resp(200, json.dumps({"State": {"Running": True}, "Name": "/proj-bot-1"}))
+            return _Resp(
+                200,
+                json.dumps(
+                    {
+                        "State": {
+                            "Running": True,
+                            "Status": "running",
+                            "StartedAt": "2026-01-01T12:00:00Z",
+                        },
+                        "Name": "/proj-bot-1",
+                    }
+                ),
+            )
         raise AssertionError(url)
 
     monkeypatch.setattr(docker_control, "urlopen", fake_open)

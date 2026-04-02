@@ -160,22 +160,35 @@ def _find_target_container_id() -> str | None:
 def get_service_status() -> dict[str, Any]:
     cid = _find_target_container_id()
     if not cid:
-        return {"service": _service_name(), "state": "not_found", "container_name": ""}
+        return {
+            "service": _service_name(),
+            "state": "not_found",
+            "container_name": "",
+            "docker_status": "",
+            "started_at": "",
+            "running": False,
+        }
     _, payload = _docker_request("GET", f"/containers/{cid}/json")
     state = "unknown"
     running = False
     name = ""
+    docker_status = ""
+    started_at = ""
     if isinstance(payload, dict):
         st = payload.get("State") or {}
         running = bool(st.get("Running"))
         state = "running" if running else "stopped"
         name = str(payload.get("Name") or "").lstrip("/")
+        docker_status = str(st.get("Status") or "").lower()
+        started_at = str(st.get("StartedAt") or "")
     return {
         "service": _service_name(),
         "state": state,
         "running": running,
         "container_id": cid,
         "container_name": name,
+        "docker_status": docker_status,
+        "started_at": started_at,
     }
 
 

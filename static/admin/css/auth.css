@@ -30,14 +30,20 @@ body {
 }
 .auth-wrap {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding: 1rem 1.25rem;
+  /* Карточка выше экрана (крупный шрифт / мало высоты) — прокрутка, а не обрезка снизу */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .auth-card {
   width: 100%;
   max-width: 36rem;
+  margin: auto;
+  flex-shrink: 0;
   padding: 2rem;
   border-radius: 1.5rem;
   background: var(--glass);
@@ -48,10 +54,12 @@ body {
   /* Заголовок и подзаголовок по центру (как логотип); поля формы — слева */
   text-align: center;
 }
-/* Тот же знак, что в сайдбаре панели (Via) */
+/* Тот же знак, что в сайдбаре панели (Via) — жёсткие пределы, иначе SVG без бокса может разъехаться на части браузеров */
 .auth-logo--via {
   width: 4rem;
   height: 4rem;
+  max-width: min(4rem, 22vw);
+  max-height: min(4rem, 22vw);
   margin: 0 auto 1.25rem;
   border-radius: 1.1rem;
   background: #2f83e2;
@@ -59,12 +67,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
   box-shadow: 0 10px 32px rgba(47, 131, 226, 0.28);
 }
+.auth-logo--via svg,
 .auth-v-mark {
+  display: block;
   width: 2.35rem;
   height: 2.35rem;
-  display: block;
+  max-width: 62%;
+  max-height: 62%;
+  flex: 0 0 auto;
 }
 h1 { margin: 0 0 0.5rem; font-size: 1.75rem; font-weight: 600; }
 .muted { color: var(--muted); font-size: 1rem; margin: 0 0 1rem; }
@@ -147,3 +161,31 @@ input:focus, textarea:focus, select:focus {
 }
 .auth-links a { color: var(--cyan); text-decoration: none; }
 .auth-links a:hover { text-decoration: underline; }
+
+@media (max-height: 720px) {
+  /* На низком окне уменьшаем корневой масштаб — иначе 115% + крупные поля не влезают */
+  html {
+    font-size: 100%;
+  }
+  .auth-logo--via {
+    width: 3rem;
+    height: 3rem;
+    max-width: min(3rem, 20vw);
+    max-height: min(3rem, 20vw);
+    margin-bottom: 0.85rem;
+  }
+  .auth-logo--via svg,
+  .auth-v-mark {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .auth-card {
+    padding: 1.35rem 1.5rem;
+  }
+  h1 {
+    font-size: 1.45rem;
+  }
+  .muted {
+    margin-bottom: 0.75rem;
+  }
+}

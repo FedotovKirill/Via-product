@@ -59,37 +59,24 @@
 
   <article class="card demo-card">
     <h2 style="margin-top:0;">Сервис</h2>
-    {% set cycle = runtime_status.cycle or {} %}
     <div id="dash-service-metrics"
          hx-get="/dash/service-strip"
          hx-trigger="load, every 10s"
          hx-swap="innerHTML">
-    {% set d = runtime_status.docker %}
-    <p class="muted">
-      Uptime <strong>веб-панели</strong> (admin): <strong>{{ runtime_status.uptime_s }}с</strong>
-      — растёт, пока работает контейнер админки; Start/Stop относятся к <strong>контейнеру бота</strong> в Docker.
-    </p>
-    <p class="muted">
-      Бот (сервис <strong>{{ d.service }}</strong>): <strong>{{ d.state }}</strong>
-      {% if d.container_name %}<span class="muted">({{ d.container_name }})</span>{% endif %}.
-    </p>
-    <p class="muted">
-      Последний цикл: {{ cycle.last_cycle_at or "—" }}; длительность: {{ cycle.last_cycle_duration_s or "—" }}с;
-      ошибок: {{ cycle.error_count or 0 }}.
-    </p>
+    {% include "partials/service_metrics.html" %}
     </div>
     <div class="page-actions">
       <form method="post" action="/ops/bot/start">
         <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
-        <button class="btn btn-ghost" type="submit"><i class="fa-solid fa-play"></i> Start bot</button>
+        <button class="btn btn-ghost" type="submit"><i class="fa-solid fa-play"></i> Старт</button>
       </form>
-      <form method="post" action="/ops/bot/stop" hx-confirm="Остановить bot?">
+      <form method="post" action="/ops/bot/stop" hx-confirm="Остановить бота?">
         <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
-        <button class="btn btn-danger" type="submit"><i class="fa-solid fa-stop"></i> Stop bot</button>
+        <button class="btn btn-danger" type="submit"><i class="fa-solid fa-stop"></i> Стоп</button>
       </form>
-      <form method="post" action="/ops/bot/restart" hx-confirm="Перезапустить bot?">
+      <form method="post" action="/ops/bot/restart" hx-confirm="Перезапустить бота?">
         <input type="hidden" name="csrf_token" value="{{ request.state._state.get('csrf_token', '') }}"/>
-        <button class="btn btn-primary" type="submit"><i class="fa-solid fa-rotate-right"></i> Restart bot</button>
+        <button class="btn btn-primary" type="submit"><i class="fa-solid fa-rotate-right"></i> Рестарт</button>
       </form>
     </div>
   </article>
