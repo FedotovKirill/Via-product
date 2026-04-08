@@ -1375,6 +1375,8 @@ async def onboarding_page(request: Request, session: AsyncSession = Depends(get_
         is_url_or_mxid = secret_name in ("REDMINE_URL", "MATRIX_HOMESERVER", "MATRIX_USER_ID")
         secrets_masked[secret_name] = _mask_secret(raw, mask_url=is_url_or_mxid)
         secrets_raw[secret_name] = raw
+    # Загружаем DB credentials из .env
+    db_config = _load_db_config_from_env()
     resp = templates.TemplateResponse(
         request,
         "onboarding.html",
@@ -1389,6 +1391,7 @@ async def onboarding_page(request: Request, session: AsyncSession = Depends(get_
             "timezone_labels": timezone_labels,
             "secrets_masked": secrets_masked,
             "secrets_raw": secrets_raw,
+            "db_config": db_config,
         },
     )
     if set_cookie:
@@ -1454,6 +1457,67 @@ async def onboarding_catalog_save(
     await _upsert_secret_plain(session, CATALOG_NOTIFY_SECRET, json.dumps(notify_catalog, ensure_ascii=False))
     await _upsert_secret_plain(session, CATALOG_VERSIONS_SECRET, json.dumps(versions_catalog, ensure_ascii=False))
     return JSONResponse({"ok": True, "notify_count": len(notify_catalog), "versions_count": len(versions_catalog)})
+
+
+# --- Проверка доступа к сервисам ---
+
+
+def _check_redmine_access(url: str, api_key: str) -> tuple[bool, str]:
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    base = (url or "").strip().rstrip("/")
+    key = (api_key or "").strip()
+    if not base or not key:
+        return False, "Redmine: укажите URL и API-ключ."
+    req = Request(
+        f"{base}/users/current.json",
+        headers={"X-Redmine-API-Key": key, "Accept": "application/json"},
+    )
+    try:
+        with urlopen(req, timeout=6.0) as resp:
+            import json as _json
+            data = _json.loads(resp.read().decode())
+            login = data.get("user", {}).get("login", "")
+            name = data.get("user", {}).get("firstname", "") + " " + data.get("user", {}).get("lastname", "")
+            return True, f"Redmine: {name.strip()} ({login})."
+    except HTTPError as e:
+        return False, f"Redmine: HTTP {e.code}."
+    except URLError:
+        return False, "Redmine: нет ответа (URL/сеть/timeout)."
+    except Exception:
+        return False, "Redmine: ошибка проверки."
+
+
+def _check_matrix_access(homeserver: str, user_id: str, access_token: str) -> tuple[bool, str]:
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    hs = (homeserver or "").strip().rstrip("/")
+    token = (access_token or "").strip()
+    mxid = (user_id or "").strip()
+    if not hs or not token or not mxid:
+        return False, "Matrix: укажите адрес, MXID и токен."
+    try:
+        with urlopen(Request(f"{hs}/_matrix/client/versions"), timeout=6.0):
+            pass
+        req = Request(
+            f"{hs}/_matrix/client/v3/account/whoami",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urlopen(req, timeout=6.0) as resp:
+            import json as _json
+            data = _json.loads(resp.read().decode())
+            got_user = data.get("user_id", "")
+            if got_user and got_user != mxid:
+                return False, f"Matrix: токен от другого аккаунта ({got_user})."
+            return True, f"Matrix: {got_user}."
+    except HTTPError as e:
+        return False, f"Matrix: HTTP {e.code}."
+    except URLError:
+        return False, "Matrix: нет ответа (URL/сеть/timeout)."
+    except Exception:
+        return False, "Matrix: ошибка проверки."
 
 
 @app.post("/onboarding/check")
@@ -3757,3 +3821,155 @@ async def me_settings_post(
         {"bot_user_id": bot_user.id, "redmine_id": redmine_id},
     )
     return RedirectResponse("/me/settings", status_code=303)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DB credentials management (zero-config deployment)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Путь к .env файлу в Docker-контейнере
+_ENV_FILE_PATH = Path("/app/.env")
+
+
+def _load_db_config_from_env() -> dict[str, str]:
+    """Читает DB credentials из .env файла."""
+    if not _ENV_FILE_PATH.exists():
+        return {
+            "postgres_user": "bot",
+            "postgres_db": "via",
+            "postgres_password": "",
+            "app_master_key": "",
+        }
+
+    config = {}
+    for line in _ENV_FILE_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            config[key.strip()] = value.strip()
+
+    return {
+        "postgres_user": config.get("POSTGRES_USER", "bot"),
+        "postgres_db": config.get("POSTGRES_DB", "via"),
+        "postgres_password": config.get("POSTGRES_PASSWORD", ""),
+        "app_master_key": config.get("APP_MASTER_KEY", ""),
+    }
+
+
+def _update_env_file(updates: dict[str, str]) -> None:
+    """Обновляет переменные в .env файле, сохраняя остальные."""
+    if not _ENV_FILE_PATH.exists():
+        raise RuntimeError(".env file not found")
+
+    lines = _ENV_FILE_PATH.read_text(encoding="utf-8").splitlines()
+    new_lines = []
+    updated_keys = set()
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}")
+                updated_keys.add(key)
+                continue
+        new_lines.append(line)
+
+    # Добавляем новые ключи, которых не было в файле
+    for key, value in updates.items():
+        if key not in updated_keys:
+            new_lines.append(f"{key}={value}")
+
+    _ENV_FILE_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+@app.get("/settings/db-config", response_class=JSONResponse)
+async def get_db_config(request: Request, session: AsyncSession = Depends(get_session)):
+    """Возвращает текущие DB credentials из .env (только для admin)."""
+    user = getattr(request.state, "current_user", None)
+    if not user or getattr(user, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+
+    config = _load_db_config_from_env()
+    return {
+        "ok": True,
+        "postgres_user": config["postgres_user"],
+        "postgres_db": config["postgres_db"],
+        "postgres_password": config["postgres_password"],
+        "app_master_key": config["app_master_key"],
+    }
+
+
+@app.post("/settings/db-config/regenerate", response_class=JSONResponse)
+async def regenerate_db_config(
+    request: Request,
+    regenerate_password: Annotated[str, Form()] = "1",
+    regenerate_key: Annotated[str, Form()] = "1",
+    csrf_token: Annotated[str, Form()] = "",
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Генерирует новые credentials и обновляет .env.
+
+    После вызова необходимо перезапустить контейнеры bot и admin,
+    чтобы они подхватили новые credentials.
+
+    PostgreSQL пароль также обновляется через ALTER USER.
+    """
+    import secrets as _secrets
+
+    _verify_csrf(request, csrf_token)
+    user = getattr(request.state, "current_user", None)
+    if not user or getattr(user, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+
+    current_config = _load_db_config_from_env()
+    updates = {}
+
+    # Генерируем новые credentials
+    if regenerate_password in ("1", "true", "yes", "on"):
+        updates["POSTGRES_PASSWORD"] = _secrets.token_urlsafe(32)
+
+    if regenerate_key in ("1", "true", "yes", "on"):
+        updates["APP_MASTER_KEY"] = _secrets.token_urlsafe(32)
+
+    if not updates:
+        raise HTTPException(400, "Нечего перегенерировать")
+
+    # Обновляем .env файл
+    _update_env_file(updates)
+
+    # Обновляем пароль в PostgreSQL
+    if "POSTGRES_PASSWORD" in updates:
+        try:
+            from sqlalchemy import text
+
+            # Подключаемся к БД с текущими credentials и меняем пароль
+            await session.execute(
+                text("ALTER USER :username WITH PASSWORD :password"),
+                {
+                    "username": current_config["postgres_user"],
+                    "password": updates["POSTGRES_PASSWORD"],
+                },
+            )
+            await session.commit()
+        except Exception as e:
+            # Откатываем изменения в .env при ошибке
+            _update_env_file(
+                {k: current_config[k.replace("POSTGRES_", "").lower()] for k in updates if k in current_config}
+            )
+            raise HTTPException(500, f"Не удалось обновить пароль в PostgreSQL: {e}") from e
+
+    logger.info(
+        "db_credentials_regenerated actor=%s regenerated=%s",
+        mask_identifier(user.login),
+        list(updates.keys()),
+    )
+
+    return {
+        "ok": True,
+        "message": "Credentials обновлены. Перезапустите контейнеры: docker compose restart postgres bot admin",
+        "regenerated": list(updates.keys()),
+        "new_postgres_password": updates.get("POSTGRES_PASSWORD", ""),
+        "new_app_master_key": updates.get("APP_MASTER_KEY", ""),
+    }

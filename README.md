@@ -134,25 +134,43 @@ matrix_bot_firebeard/
 ### 1. Клонирование и окружение
 
 ```bash
-git clone git@github.com:forgebeard/redmine-matrix-bot.git
-cd redmine-matrix-bot
+git clone git@github.com:forgebeard/Via.git
+cd Via
 
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Настройка секретов
+### 2. Docker-развёртывание (Zero-Config)
+
+**На новой ВМ — без редактирования файлов!**
 
 ```bash
-cp .env.example .env
-./scripts/generate_master_key.sh master_key.txt
-nano .env   # заполнить все переменные (см. раздел «Настройка .env»)
+# Просто запускаем — .env создастся автоматически
+docker compose up --build -d
+
+# Смотрим логи init-сервиса (генерация credentials)
+docker compose logs init
+
+# Credentials сохранены в .env — их можно посмотреть в GUI админки
 ```
 
-`master_key.txt` — локальный dev-вариант хранения ключа. Для production используйте secret manager (Docker/K8s secret) или защищённый канал передачи `APP_MASTER_KEY_FILE`.
+**Что происходит при первом запуске:**
+1. Сервис `init` генерирует случайные `POSTGRES_PASSWORD` и `APP_MASTER_KEY`
+2. Сохраняет их в файл `.env` в корне проекта
+3. PostgreSQL стартует с этими credentials
+4. Админка и бот подключаются к БД
 
-Подробности по хранению секретов: `docs/secrets-storage.md`.
+**После запуска:**
+1. Откройте `http://<хост>:8080/setup` — создайте первого администратора
+2. Войдите в админку: `http://<хост>:8080/login`
+3. Перейдите в **Настройки** (`/onboarding`) — там раздел **"База данных сервиса"**
+4. Введите параметры Matrix и Redmine в разделе **"Параметры сервиса"**
+5. Сохраните — бот автоматически подхватит настройки
+
+> ⚠️ **Важно:** Сохраните credentials из `.env` или из GUI в надёжном месте!
+> Если потеряете `APP_MASTER_KEY` — не сможете расшифровать секреты в БД.
 
 ### 3. Настройка пользователей и маршрутизации
 
@@ -168,7 +186,7 @@ cd src && python3 -c "from config import validate_required_env; ok, m = validate
 
 Зависимости для pytest: `pip install -r requirements.txt -r requirements-test.txt` (в `requirements-test.txt` есть **httpx** для `TestClient` админки).
 
-Если задан **`DATABASE_URL`** на Postgres, он должен совпадать с реальным сервером (пароль/пользователь из `.env` или из `docker compose`). Пример из CI (`postgresql://bot:postgres@localhost:5432/redmine_matrix`) подходит только при таком же контейнере или настройке `pg_hba`.
+Если задан **`DATABASE_URL`** на Postgres, он должен совпадать с реальным сервером (пароль/пользователь из `.env` или из `docker compose`). Пример из CI (`postgresql://bot:postgres@localhost:5432/via`) подходит только при таком же контейнере или настройке `pg_hba`.
 
 ```bash
 # Юнит- и API-тесты (без браузера)
@@ -201,24 +219,30 @@ python3 bot.py
 
 | Сервис | Назначение |
 |--------|------------|
+| **init** | Генерирует `.env` со случайными `POSTGRES_PASSWORD` и `APP_MASTER_KEY` при первом запуске |
 | **bot** | Образ из `Dockerfile` (корневой `bot.py` + `src/`), том `./data` → `/app/data`, `.env` только для чтения; healthcheck: `python -c "import bot"` |
 | **postgres** | PostgreSQL 16, том `postgres_data`; `DATABASE_URL` в **bot** и **admin** |
 | **docker-socket-proxy** | Ограниченный прокси к Docker API для runtime-control из admin (без прямого монтирования raw socket в admin). Если Start/Stop не срабатывают, на дашборде в уведомлении показывается текст ошибки Docker; см. комментарии к переменным `DOCKER_*` в `.env.example` (в том числе `DOCKER_TARGET_CONTAINER_SUBSTRING`). |
-| **admin** | Панель (`admin_main.py`, FastAPI + Jinja2 + HTMX): **дашборд** (`/dashboard`, тот же экран на `/`), **группы** (в т.ч. маршруты по статусу Redmine в комнату группы), **пользователи**, **настройки** (`/onboarding`), **события** (`/events`: таблица и CSV по файлу **`ADMIN_EVENTS_LOG_PATH`** / `data/bot.log`, фильтр по датам, **`ADMIN_EVENTS_LOG_SCAN_BYTES`**, **`ADMIN_EVENTS_LOG_PARSE_AS_UTC`**, строки **`[ADMIN]`**; аудит панели — отдельный **`ADMIN_AUDIT_LOG_PATH`** / `data/admin_audit.log`); маршруты по версии — URL **`/routes/version`** (без пункта в меню); runtime-control бота; **CSP** (`ADMIN_ENABLE_CSP` / `ADMIN_CSP_POLICY`); **`ADMIN_PORT`** (8080); при старте `alembic upgrade head`; том **`./data`** у сервиса **с записью** (чтобы дописывать логи и читать `runtime_status.json`) |
+| **admin** | Панель (`admin_main.py`, FastAPI + Jinja2 + HTMX): **дашборд** (`/dashboard`, тот же экран на `/`), **группы** (в т.ч. маршруты по статусу Redmine в комнату группы), **пользователи**, **настройки** (`/onboarding`), **события** (`/events`: таблица и CSV по файлу **`ADMIN_EVENTS_LOG_PATH`** / `data/bot.log`, фильтр по датам, **`ADMIN_EVENTS_LOG_SCAN_BYTES`**, **`ADMIN_EVENTS_LOG_PARSE_AS_UTC`**, строки **`[ADMIN]`**; аудит панели — отдельный **`ADMIN_AUDIT_LOG_PATH`** / `data/admin_audit.log`); маршруты по версии — URL **`/routes/version`** (без пункта в меню); runtime-control бота; **CSP** (`ADMIN_ENABLE_CSP` / `ADMIN_CSP_POLICY`); **`ADMIN_PORT`** (8080); при старте `alembic upgrade head`; том **`./data`** у сервиса **с записью** (чтобы дописывать логи и читать `runtime_status.json`); **управление credentials БД** через GUI |
 
 ### Подготовка `.env`
 
-Сначала добавьте переменные для PostgreSQL (используются и `docker compose`, и подстановка `DATABASE_URL` в контейнере бота):
+**НЕ ТРЕБУЕТСЯ!** При первом запуске `docker compose up --build -d` сервис `init` автоматически создаст `.env` со случайными:
+- `POSTGRES_PASSWORD` — пароль для PostgreSQL
+- `APP_MASTER_KEY` — мастер-ключ для шифрования секретов в БД
 
+Если нужно переопределить значения по умолчанию — создайте `.env` вручную:
 ```env
 POSTGRES_USER=bot
-POSTGRES_PASSWORD=сгенерируйте_надёжный_пароль
-POSTGRES_DB=redmine_matrix
+POSTGRES_DB=via
+ADMIN_PORT=8080
+BOT_TIMEZONE=Europe/Moscow
 ```
 
-Остальные переменные — как в разделе «Настройка .env» ниже (`MATRIX_*`, `REDMINE_*` и параметры admin).
-
-> ⚠️ Если в пароле есть символы `@ : / ? #` — для `DATABASE_URL` может понадобиться URL-кодирование или упрощённый пароль для dev.
+> ⚠️ **Важно:** Сохраните сгенерированные credentials в надёжном месте!
+> Их можно посмотреть:
+> - В файле `.env` в корне проекта
+> - В GUI админки: Настройки → **База данных сервиса**
 
 ### Сборка и запуск
 
@@ -228,8 +252,11 @@ POSTGRES_DB=redmine_matrix
 # Создать каталог data при необходимости (том смонтируется пустым)
 mkdir -p data
 
-# Сборка образа и запуск в фоне
+# Сборка образа и запуск в фоне (.env создастся автоматически)
 docker compose up --build -d
+
+# Смотрим логи init-сервиса (генерация credentials)
+docker compose logs init
 
 # Логи бота
 docker compose logs -f bot
@@ -250,10 +277,29 @@ docker compose down
 1. После `docker compose up` откройте `http://<хост>:8080/setup` и создайте первого admin (только если admin ещё нет в БД).
 2. Вход в админку: `http://<хост>:8080/login` по логину и паролю.
 3. Сброс пароля админки: другой администратор (**Аккаунты панели**) или скрипт `scripts/reset_admin_password.py` при доступе к БД; самообслуживания по ссылке «забыли пароль» нет.
-4. Заполните пользователей и **группы** в админке (маршруты по **статусу** Redmine задаются в карточке группы — комната группы и список статусов; маршруты по **версии** — отдельная таблица, страница **`/routes/version`** при необходимости). Секреты — в **Настройках** (`/onboarding`). Раздел **События** строится по файлу лога (**`ADMIN_EVENTS_LOG_PATH`**, иначе `data/bot.log`); журнал аудита панели — **`ADMIN_AUDIT_LOG_PATH`** (см. [ADMINISTRATOR_GUIDE.md](docs/ADMINISTRATOR_GUIDE.md)). После изменений в БД перезапустите сервис **`bot`** (он перечитывает конфиг при старте).
-5. Для дедупликации на нескольких инстансах используется lease по пользователю (`bot_user_leases`) и state в `bot_issue_state`.
+4. Перейдите в **Настройки** (`/onboarding`) → раздел **"База данных сервиса"** — здесь можно посмотреть текущие credentials и перегенерировать их при необходимости.
+5. Введите параметры Matrix и Redmine в разделе **"Параметры сервиса"** → нажмите **"Сохранить"**.
+6. Заполните пользователей и **группы** в админке (маршруты по **статусу** Redmine задаются в карточке группы — комната группы и список статусов; маршруты по **версии** — отдельная таблица, страница **`/routes/version`** при необходимости). Раздел **События** строится по файлу лога (**`ADMIN_EVENTS_LOG_PATH`**, иначе `data/bot.log`); журнал аудита панели — **`ADMIN_AUDIT_LOG_PATH`** (см. [ADMINISTRATOR_GUIDE.md](docs/ADMINISTRATOR_GUIDE.md)). После изменений в БД перезапустите сервис **`bot`** (он перечитывает конфиг при старте).
+7. Для дедупликации на нескольких инстансах используется lease по пользователю (`bot_user_leases`) и state в `bot_issue_state`.
 
 Миграции схемы БД выполняются при старте сервиса **admin**: `alembic upgrade head`.
+
+### Перегенерация credentials
+
+Если нужно сменить пароль БД или мастер-ключ:
+
+**Через GUI (рекомендуется):**
+1. Настройки → **База данных сервиса** → кнопка **"Сгенерировать новые"**
+2. Подтвердите действие
+3. Перезапустите контейнеры: `docker compose restart postgres bot admin`
+
+**Вручную (через init-скрипт):**
+```bash
+# Перегенерация .env с новыми credentials
+docker compose run --rm -e REGENERATE=1 init
+# Перезапуск контейнеров
+docker compose restart postgres bot admin
+```
 
 ### Только пересборка образа бота
 
@@ -657,7 +703,7 @@ docker compose restart bot
 
 ```bash
 # Убедитесь что запускаете из корня проекта
-cd /path/to/redmine-matrix-bot
+cd /path/to/Via
 python -m pytest tests/ -v --tb=long
 ```
 

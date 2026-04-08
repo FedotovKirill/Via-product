@@ -81,6 +81,40 @@
     <p class="muted" style="margin:0.4rem 0 0;">Подключения сохранены.</p>
     {% endif %}
 
+    <h2 style="margin-top:0.75rem;">База данных сервиса</h2>
+    <section class="service-bubble stack">
+      <div class="field">
+        <label for="db_user">Пользователь БД</label>
+        <input id="db_user" type="text" readonly value="{{ db_config.postgres_user }}"/>
+      </div>
+      <div class="field">
+        <label for="db_name">Имя базы данных</label>
+        <input id="db_name" type="text" readonly value="{{ db_config.postgres_db }}"/>
+      </div>
+      <div class="field">
+        <label for="db_password">Пароль БД</label>
+        <div class="input-with-toggle">
+          <input id="db_password" type="password" readonly value="{{ db_config.postgres_password }}"/>
+          <button type="button" class="toggle-visibility" data-target="db_password" aria-label="Показать/скрыть">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="master_key">Мастер-ключ</label>
+        <div class="input-with-toggle">
+          <input id="master_key" type="password" readonly value="{{ db_config.app_master_key }}"/>
+          <button type="button" class="toggle-visibility" data-target="master_key" aria-label="Показать/скрыть">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+      </div>
+      <div class="page-actions" style="margin-top:0.5rem;">
+        <button class="btn btn-ghost" type="button" id="regenerate-db-credentials">Сгенерировать новые</button>
+      </div>
+      <p id="db-regenerate-status" class="muted" style="margin:0.4rem 0 0;" aria-live="polite"></p>
+    </section>
+
     <h2 style="margin-top:0.75rem;">Таймзона сервиса</h2>
     <section class="service-bubble stack service-timezone-block">
       <div class="field">
@@ -445,6 +479,61 @@
         status.textContent = lines.join(" ");
       } catch (e) {
         status.textContent = "Ошибка сети при проверке.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  })();
+
+  // --- Обработчик кнопки регенерации DB credentials ---
+  (function () {
+    var btn = document.getElementById("regenerate-db-credentials");
+    var status = document.getElementById("db-regenerate-status");
+    var dbPasswordInput = document.getElementById("db_password");
+    var masterKeyInput = document.getElementById("master_key");
+    if (!btn || !status) return;
+
+    btn.addEventListener("click", async function () {
+      if (!confirm(
+        "Сгенерировать новые credentials?\n\n" +
+        "После этого необходимо перезапустить контейнеры:\n" +
+        "docker compose restart postgres bot admin\n\n" +
+        "Продолжить?"
+      )) return;
+
+      status.textContent = "Генерация...";
+      btn.disabled = true;
+
+      try {
+        var fd = new FormData();
+        var csrfInput = form ? form.querySelector('input[name="csrf_token"]') : null;
+        fd.append("csrf_token", csrfInput ? csrfInput.value : "");
+        fd.append("regenerate_password", "1");
+        fd.append("regenerate_key", "1");
+
+        var resp = await fetch("/settings/db-config/regenerate", {
+          method: "POST",
+          body: fd,
+          credentials: "same-origin",
+          headers: { Accept: "application/json" }
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          status.textContent = data.message;
+          // Обновляем поля на странице
+          if (dbPasswordInput && data.new_postgres_password) {
+            dbPasswordInput.value = data.new_postgres_password;
+            dbPasswordInput.type = "text"; // Показываем новый пароль
+          }
+          if (masterKeyInput && data.new_app_master_key) {
+            masterKeyInput.value = data.new_app_master_key;
+            masterKeyInput.type = "text"; // Показываем новый ключ
+          }
+        } else {
+          status.textContent = "Ошибка: " + (data.detail || "Неизвестная ошибка");
+        }
+      } catch (e) {
+        status.textContent = "Ошибка сети.";
       } finally {
         btn.disabled = false;
       }

@@ -5,22 +5,42 @@
 #
 # Конфигурация читается из Postgres (таблицы `bot_users` и маппинги роутинга).
 #
-# Запуск (из корня репозитория, после копирования и заполнения .env):
-#   docker compose up --build -d
+# При первом запуске автоматически генерируется .env с POSTGRES_PASSWORD
+# и APP_MASTER_KEY (сервис init). После этого: docker compose up --build -d
 # =============================================================================
 
 services:
   # ---------------------------------------------------------------------------
-  # PostgreSQL — данные на именованном томе (переживает пересоздание контейнера).
+  # Init: генерирует .env с случайными credentials при первом запуске.
+  # ---------------------------------------------------------------------------
+  init:
+    image: python:3.11-slim
+    volumes:
+      # Монтируем .env из хоста, чтобы init мог его создать/обновить.
+      - ./.env:/app/.env
+      # Монтируем скрипт инициализации.
+      - ./scripts/init_env.py:/app/scripts/init_env.py:ro
+    command: ["python", "/app/scripts/init_env.py"]
+    # Init запускается один раз и завершается.
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — данные на именованном томе (переживают пересоздание контейнера).
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    depends_on:
+      # Ждём завершения init перед стартом БД.
+      init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
     environment:
       # Значения по умолчанию можно переопределить в .env рядом с compose-файлом.
       POSTGRES_USER: ${POSTGRES_USER:-bot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:-redmine_matrix}
+      POSTGRES_DB: ${POSTGRES_DB:-via}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -53,7 +73,7 @@ services:
       # Важно: пароль может содержать зарезервированные URL-символы (например `]`, `/`, `+`),
       # поэтому используем URL-encoded версию, чтобы asyncpg/SQLAlchemy корректно распарсили DSN.
       # Если POSTGRES_PASSWORD_URLENC не задан — откат на raw.
-      DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD_URLENC:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-redmine_matrix}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD_URLENC:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-via}
       # В clean-code режиме бот всегда читает конфиг и state из Postgres.
     volumes:
       # Логи bot.log (см. bot.py: data_dir) — переживают обновления образа.
@@ -109,8 +129,9 @@ services:
       - .env
     environment:
       # См. комментарий выше про URL-encoded пароль.
-      DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD_URLENC:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-redmine_matrix}
-      APP_MASTER_KEY_FILE: ${APP_MASTER_KEY_FILE:-/run/secrets/app_master_key}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD_URLENC:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-via}
+      # Мастер-ключ читается из .env (APP_MASTER_KEY), а не из файла.
+      APP_MASTER_KEY: ${APP_MASTER_KEY:-}
       DOCKER_HOST: ${DOCKER_HOST:-tcp://docker-socket-proxy:2375}
       DOCKER_TARGET_SERVICE: ${DOCKER_TARGET_SERVICE:-bot}
       BOT_RUNTIME_STATUS_FILE: ${BOT_RUNTIME_STATUS_FILE:-/app/data/runtime_status.json}
@@ -122,13 +143,13 @@ services:
       ]
     ports:
       - "${ADMIN_PORT:-8080}:8080"
-    # Для production предпочтительно передавать ключ через secret manager
-    # (Docker/K8s secrets) или env APP_MASTER_KEY, а не через bind-файл.
     working_dir: /app
     user: bot
     volumes:
       # rw: бот пишет runtime_status.json; админка дописывает строки [ADMIN] в лог событий (см. ADMIN_EVENTS_LOG_PATH).
       - ./data:/app/data
+      # Монтируем .env для чтения/записи credentials через GUI.
+      - ./.env:/app/.env
 
 volumes:
   postgres_data:
