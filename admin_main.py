@@ -2975,6 +2975,73 @@ async def user_test_message(
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+@app.post("/groups/test-message")
+async def group_test_message(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Отправляет тестовое сообщение в комнату группы по room_id."""
+    _verify_csrf_json(request)
+    admin_user = getattr(request.state, "current_user", None)
+    if not admin_user or getattr(admin_user, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+
+    # Загружаем секреты из БД
+    homeserver = await _load_secret_plain(session, "MATRIX_HOMESERVER")
+    access_token = await _load_secret_plain(session, "MATRIX_ACCESS_TOKEN")
+    bot_mxid = await _load_secret_plain(session, "MATRIX_USER_ID")
+
+    if not homeserver or not access_token or not bot_mxid:
+        return JSONResponse({"ok": False, "error": "Matrix не настроен"}, status_code=400)
+
+    form = await request.form()
+    room_id = (form.get("room_id") or "").strip()
+    if not room_id:
+        return JSONResponse({"ok": False, "error": "Не указан ID комнаты"}, status_code=400)
+
+    # Формируем сообщение
+    from datetime import datetime as _dt
+    ts = _dt.now().strftime("%H:%M:%S")
+    html = (
+        f"<b>🧪 Тестовое сообщение группы</b><br>"
+        f"Это тест от панели управления.<br>"
+        f"Если вы это видите — подключение работает!<br>"
+        f"<small>Отправлено: {ts}</small>"
+    )
+    text_plain = f"🧪 Тестовое сообщение группы\nЭто тест от панели управления.\nОтправлено: {ts}"
+
+    try:
+        from nio import AsyncClient
+        from src.matrix_send import room_send_with_retry
+
+        client = AsyncClient(homeserver, bot_mxid)
+        client.access_token = access_token
+        client.device_id = "redmine_bot_admin_test"
+        
+        # Восстанавливаем сессию (важно для nio, чтобы работать с токеном)
+        await client.restore_login(bot_mxid, "redmine_bot_admin_test", access_token)
+
+        # Синхронизируемся, чтобы получить список комнат и ключи шифрования
+        logger.info("group_test_message: syncing to find room %s...", room_id)
+        await client.sync(timeout=10000)
+        
+        if room_id not in client.rooms:
+            await client.close()
+            return JSONResponse({"ok": False, "error": f"Бот не является участником комнаты {room_id}. Пригласите его в Matrix."}, status_code=400)
+
+        logger.info("group_test_message: sending to %s", room_id)
+        content = {"msgtype": "m.text", "body": text_plain, "format": "org.matrix.custom.html", "formatted_body": html}
+        await room_send_with_retry(client, room_id, content)
+        await client.close()
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        import traceback as _tb
+        # Формируем подробное сообщение об ошибке
+        err_detail = _tb.format_exc()
+        logger.error("group_test_message_failed room_id=%s\n%s", room_id, err_detail)
+        return JSONResponse({"ok": False, "error": err_detail}, status_code=500)
+
+
 # --- Redmine: поиск users по имени/логину ---
 
 

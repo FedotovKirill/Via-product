@@ -20,6 +20,11 @@
               <input id="room_id" name="room_id" value="{{ g.room_id if g else '' }}" placeholder="!group-room:server" {% if not g %}required{% endif %}/>
             </div>
           </div>
+          <div class="inline-actions" style="margin-top:0.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center;">
+            <button type="button" class="btn btn-ghost" id="group_test_message_btn"
+                    data-room-id="{{ g.room_id if g and g.room_id else '' }}">Отправить тестовое сообщение</button>
+            <span id="group_test_status" class="muted" role="status" aria-live="polite"></span>
+          </div>
         </article>
 
         <article class="card user-form-section">
@@ -247,6 +252,52 @@
     el.addEventListener('change', refreshSummary);
   });
   refreshSummary();
+
+  // --- Кнопка «Отправить тестовое сообщение» ---
+  (function () {
+    var testBtn = document.getElementById('group_test_message_btn');
+    var statusEl = document.getElementById('group_test_status');
+    if (!testBtn || !statusEl) return;
+
+    testBtn.addEventListener('click', async function() {
+      var roomId = testBtn.getAttribute('data-room-id') || '';
+      var inputRoomId = document.getElementById('room_id');
+      if (inputRoomId && !roomId) {
+        roomId = inputRoomId.value.trim();
+      }
+
+      if (!roomId) {
+        statusEl.textContent = 'Укажите ID комнаты группы';
+        return;
+      }
+
+      testBtn.disabled = true;
+      testBtn.textContent = '⏳ Отправка…';
+      statusEl.textContent = '';
+      try {
+        var csrf = document.querySelector('input[name="csrf_token"]')?.value || '';
+        var body = new FormData();
+        body.append('room_id', roomId);
+        var r = await fetch('/groups/test-message', {
+          method: 'POST',
+          headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf },
+          credentials: 'same-origin',
+          body: body,
+        });
+        var data = await r.json().catch(function() { return {}; });
+        if (data.ok) {
+          statusEl.textContent = 'Сообщение доставлено';
+        } else {
+          statusEl.textContent = 'Не доставлено: ' + (data.error || 'неизвестная ошибка');
+        }
+      } catch (e) {
+        statusEl.textContent = 'Не доставлено: ошибка сети';
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Отправить тестовое сообщение';
+      }
+    });
+  })();
 </script>
 
 {% endblock %}
