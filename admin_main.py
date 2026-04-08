@@ -1142,11 +1142,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
         return response
 
-
-REDMINE_URL = (os.getenv("REDMINE_URL") or "").strip()
-REDMINE_API_KEY = (os.getenv("REDMINE_API_KEY") or "").strip()
-
-
 app.add_middleware(AuthMiddleware)
 
 
@@ -2845,6 +2840,16 @@ async def user_test_message(
     if not admin_user or getattr(admin_user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
 
+    # Загружаем секреты из БД
+    homeserver = await _load_secret_plain(session, "MATRIX_HOMESERVER")
+    access_token = await _load_secret_plain(session, "MATRIX_ACCESS_TOKEN")
+    bot_mxid = await _load_secret_plain(session, "MATRIX_USER_ID")
+    redmine_url = await _load_secret_plain(session, "REDMINE_URL")
+    redmine_key = await _load_secret_plain(session, "REDMINE_API_KEY")
+
+    if not homeserver or not access_token or not bot_mxid:
+        return JSONResponse({"ok": False, "error": "Matrix не настроен (нет homeserver/token/user_id)"}, status_code=400)
+
     form = await request.form()
     raw_uid = form.get("user_id", "")
     raw_mxid = form.get("mxid", "")
@@ -2857,6 +2862,16 @@ async def user_test_message(
             uid = 0
 
     target_mxid = (raw_mxid or "").strip()
+    room_id = None  # Инициализируем заранее, чтобы избежать UnboundLocalError
+
+    # Извлекаем домен из homeserver (https://messenger.red-soft.ru → messenger.red-soft.ru)
+    matrix_domain = homeserver.replace("https://", "").replace("http://", "").rstrip("/")
+
+    # Если MXID введён вручную (не полный), добавляем домен
+    if target_mxid and ":" not in target_mxid:
+        if not target_mxid.startswith("@"):
+            target_mxid = f"@{target_mxid}"
+        target_mxid = f"{target_mxid}:{matrix_domain}"
 
     # Если указан user_id — берём данные из БД
     if uid > 0:
@@ -2878,7 +2893,8 @@ async def user_test_message(
                     rdata = _json3.loads(resp.read().decode())
                     login = rdata.get("user", {}).get("login", "")
                     if login:
-                        domain = _matrix_domain()
+                        # Извлекаем домен из MXID бота (@bot:domain → domain)
+                        domain = bot_mxid.split(":", 1)[1] if ":" in bot_mxid else ""
                         target_mxid = f"@{login}:{domain}" if domain else None
             except Exception:
                 pass
@@ -3250,7 +3266,10 @@ async def redmine_users_search(
         logger.warning("Redmine search blocked due to cooldown")
         return HTMLResponse('<option value="">Поиск временно недоступен (cooldown)</option>')
 
-    if not REDMINE_URL or not REDMINE_API_KEY:
+    redmine_url = await _load_secret_plain(session, "REDMINE_URL")
+    redmine_key = await _load_secret_plain(session, "REDMINE_API_KEY")
+
+    if not redmine_url or not redmine_key:
         return HTMLResponse('<option value="">Redmine не настроен (нет URL/API key)</option>')
 
     def _do_search() -> tuple[list[dict], str | None]:
@@ -3259,8 +3278,8 @@ async def redmine_users_search(
         from urllib.error import HTTPError, URLError
 
         params = urlencode({"name": q, "limit": str(limit_i)})
-        url = f"{REDMINE_URL.rstrip('/')}/users.json?{params}"
-        req = Request(url, headers={"X-Redmine-API-Key": REDMINE_API_KEY})
+        url = f"{redmine_url.rstrip('/')}/users.json?{params}"
+        req = Request(url, headers={"X-Redmine-API-Key": redmine_key})
         try:
             with urlopen(req, timeout=5.0) as r:
                 payload = json.loads(r.read().decode("utf-8", errors="replace"))
@@ -3301,15 +3320,15 @@ async def redmine_users_search(
     return HTMLResponse("".join(opts))
 
 
-def _fetch_redmine_user_by_id(redmine_user_id: int) -> tuple[dict | None, str | None]:
+def _fetch_redmine_user_by_id(redmine_user_id: int, redmine_url: str, redmine_key: str) -> tuple[dict | None, str | None]:
     """GET /users/:id.json → (user dict, None) или (None, error_code)."""
-    if not REDMINE_URL or not REDMINE_API_KEY:
+    if not redmine_url or not redmine_key:
         return None, "not_configured"
     from urllib.error import HTTPError, URLError
     from urllib.request import Request, urlopen
 
-    url = f"{REDMINE_URL.rstrip('/')}/users/{redmine_user_id}.json"
-    req = Request(url, headers={"X-Redmine-API-Key": REDMINE_API_KEY})
+    url = f"{redmine_url.rstrip('/')}/users/{redmine_user_id}.json"
+    req = Request(url, headers={"X-Redmine-API-Key": redmine_key})
     try:
         with urlopen(req, timeout=5.0) as r:
             payload = json.loads(r.read().decode("utf-8", errors="replace"))
@@ -3328,7 +3347,7 @@ def _fetch_redmine_user_by_id(redmine_user_id: int) -> tuple[dict | None, str | 
 
 
 @app.get("/redmine/users/lookup")
-async def redmine_user_lookup(request: Request, user_id: int):
+async def redmine_user_lookup(request: Request, user_id: int, session: AsyncSession = Depends(get_session)):
     """
     JSON для формы пользователя: по числовому Redmine user id подставить отображаемое имя.
     """
@@ -3340,7 +3359,10 @@ async def redmine_user_lookup(request: Request, user_id: int):
     if _redmine_search_breaker.blocked():
         return JSONResponse({"ok": False, "error": "cooldown"}, status_code=503)
 
-    raw, err = await asyncio.to_thread(_fetch_redmine_user_by_id, user_id)
+    redmine_url = await _load_secret_plain(session, "REDMINE_URL")
+    redmine_key = await _load_secret_plain(session, "REDMINE_API_KEY")
+
+    raw, err = await asyncio.to_thread(_fetch_redmine_user_by_id, user_id, redmine_url, redmine_key)
     if err == "not_configured":
         return JSONResponse({"ok": False, "error": "not_configured"})
     if err == "not_found":

@@ -58,18 +58,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 load_dotenv()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# НАСТРОЙКИ ИЗ .env
+# НАСТРОЙКИ ИЗ .env (не-секретные)
 # ═══════════════════════════════════════════════════════════════════════════
 
-# --- Matrix ---
-HOMESERVER       = os.getenv("MATRIX_HOMESERVER")
-ACCESS_TOKEN     = os.getenv("MATRIX_ACCESS_TOKEN")
-MATRIX_USER_ID   = os.getenv("MATRIX_USER_ID")
+# --- Matrix (не-секретные) ---
 MATRIX_DEVICE_ID = (os.getenv("MATRIX_DEVICE_ID") or "").strip() or "redmine_bot"
 
 # --- Redmine ---
-REDMINE_URL = os.getenv("REDMINE_URL")
-REDMINE_KEY = os.getenv("REDMINE_API_KEY")
+# REDMINE_URL и REDMINE_API_KEY загружаются из БД (app_secrets)
 
 # --- Таймзона ---
 BOT_TZ = ZoneInfo(os.getenv("BOT_TIMEZONE", "Europe/Moscow"))
@@ -156,6 +152,22 @@ STATUSES_TRANSFERRED = {
     "Передано в работу.РБД",
     "Передано в работу.ВРМ",
 }
+
+# Имена секретов, загружаемых из app_secrets
+_SECRET_NAMES = [
+    "REDMINE_URL",
+    "REDMINE_API_KEY",
+    "MATRIX_HOMESERVER",
+    "MATRIX_ACCESS_TOKEN",
+    "MATRIX_USER_ID",
+]
+
+# Глобальные переменные конфигурации (заполняются в main() из БД)
+HOMESERVER: str = ""
+ACCESS_TOKEN: str = ""
+MATRIX_USER_ID: str = ""
+REDMINE_URL: str = ""
+REDMINE_KEY: str = ""
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ЛОГИРОВАНИЕ
@@ -1093,17 +1105,65 @@ async def cleanup_state_files(redmine):
 
 
 async def main():
-    global USERS, STATUS_ROOM_MAP, VERSION_ROOM_MAP
+    global USERS, STATUS_ROOM_MAP, VERSION_ROOM_MAP, HOMESERVER, ACCESS_TOKEN, MATRIX_USER_ID, REDMINE_URL, REDMINE_KEY
 
     logger.info("🚀 Бот запущен")
 
     for hint in env_placeholder_hints():
         logger.warning("⚠ Похоже на плейсхолдер из .env.example (замените в .env): %s", hint)
 
-    # --- Проверка обязательных настроек ---
-    if not all([HOMESERVER, ACCESS_TOKEN, MATRIX_USER_ID, REDMINE_URL, REDMINE_KEY]):
-        logger.error("❌ Не заданы обязательные переменные в .env")
-        return
+    # --- Ожидание готовности конфигурации из БД ---
+    from database.session import get_session_factory
+    from security import decrypt_secret, load_master_key
+    from sqlalchemy import text
+
+    poll_interval = 30  # секунд между попытками
+    session_factory = get_session_factory()
+
+    while True:
+        try:
+            async with session_factory() as session:
+                result = await session.execute(
+                    text(
+                        "SELECT name, ciphertext, nonce FROM app_secrets "
+                        "WHERE name = ANY(:names)"
+                    ),
+                    {"names": list(_SECRET_NAMES)},
+                )
+                secrets_map = {row.name: (row.ciphertext, row.nonce) for row in result}
+
+            key = load_master_key()
+            config: dict[str, str] = {}
+            for name in _SECRET_NAMES:
+                if name in secrets_map:
+                    ct, nonce = secrets_map[name]
+                    try:
+                        config[name] = decrypt_secret(ct, nonce, key)
+                    except Exception:
+                        logger.warning("⚠ Не удалось расшифровать секрет %s", name)
+                        config[name] = ""
+                else:
+                    config[name] = ""
+
+            missing = [name for name in _SECRET_NAMES if not config.get(name)]
+            if not missing:
+                HOMESERVER = config["MATRIX_HOMESERVER"]
+                ACCESS_TOKEN = config["MATRIX_ACCESS_TOKEN"]
+                MATRIX_USER_ID = config["MATRIX_USER_ID"]
+                REDMINE_URL = config["REDMINE_URL"]
+                REDMINE_KEY = config["REDMINE_API_KEY"]
+                logger.info("✅ Конфиг загружен из БД")
+                break
+            else:
+                logger.warning(
+                    "⏳ Конфиг не настроен (отсутствуют: %s). Повтор через %d с...",
+                    ", ".join(missing),
+                    poll_interval,
+                )
+        except Exception as e:
+            logger.error("Ошибка загрузки конфига: %s", e)
+
+        await asyncio.sleep(poll_interval)
 
     # Бот всегда стартует в DB-only режиме: конфиг берём из Postgres.
     try:
@@ -1113,6 +1173,14 @@ async def main():
     except Exception as e:
         logger.error("❌ Не удалось загрузить конфиг из БД: %s", e, exc_info=True)
         return
+
+    # --- Подключение к Matrix ---
+    from nio import AsyncClient
+    client = AsyncClient(HOMESERVER, MATRIX_USER_ID)
+    client.access_token = ACCESS_TOKEN
+    client.device_id = MATRIX_DEVICE_ID or "redmine_bot"
+    client.user_id = MATRIX_USER_ID
+    logger.info(f"✅ Matrix: клиент создан для {MATRIX_USER_ID}")
 
     # --- Подключение к Redmine ---
     redmine = Redmine(REDMINE_URL, key=REDMINE_KEY)

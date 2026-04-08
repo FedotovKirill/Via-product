@@ -36,16 +36,14 @@
           </div>
           <div class="field">
             <label for="room_localpart">Matrix ID пользователя</label>
-            <div class="room-id-input">
-              <span class="room-prefix">@</span>
-              <input type="text" id="room_localpart" name="room" required
-                     value="{{ room_localpart if room_localpart else '' }}"
-                     placeholder="ivan.ivanov"/>
-              {% if matrix_domain %}
-              <span class="room-suffix">:{{ matrix_domain }}</span>
-              {% endif %}
-            </div>
-            <p class="field-hint">Только localpart — домен подставится автоматически.</p>
+            <input type="text" id="room_localpart" name="room" required
+                   value="{{ room_localpart if room_localpart else '' }}"
+                   placeholder="ivan.ivanov"/>
+            {% if matrix_domain %}
+            <p class="field-hint">Домен: <code>{{ matrix_domain }}</code>. Введите только логин.</p>
+            {% else %}
+            <p class="field-hint">Полный ID вида @login:domain</p>
+            {% endif %}
           </div>
         </div>
 

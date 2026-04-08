@@ -65,6 +65,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     env_file:
@@ -121,6 +123,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       docker-socket-proxy:

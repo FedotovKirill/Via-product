@@ -26,7 +26,7 @@ def generate_credentials() -> dict[str, str]:
     """Генерирует случайные credentials для БД и шифрования."""
     return {
         "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
-        "APP_MASTER_KEY": secrets.token_urlsafe(32),
+        "APP_MASTER_KEY": secrets.token_hex(16),
     }
 
 
