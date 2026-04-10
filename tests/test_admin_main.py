@@ -347,20 +347,6 @@ def test_redmine_lookup_requires_auth(client: TestClient):
     assert loc.endswith("/login") or loc.endswith("/setup"), loc
 
 
-def test_redmine_lookup_not_configured_json(client: TestClient, monkeypatch):
-    db_url = os.getenv("DATABASE_URL", "")
-    if not db_url or not db_url.startswith("postgresql://"):
-        pytest.skip("Тест требует Postgres (DATABASE_URL)")
-    pytest.skip("REDMINE_URL теперь хранится в БД (app_secrets), а не в env модуля")
-
-
-def test_redmine_search_without_redmine_creds_returns_empty(client: TestClient, monkeypatch):
-    db_url = os.getenv("DATABASE_URL", "")
-    if not db_url or not db_url.startswith("postgresql://"):
-        pytest.skip("Тест требует Postgres (DATABASE_URL)")
-    pytest.skip("REDMINE_URL теперь хранится в БД (app_secrets), а не в env модуля")
-
-
 def test_groups_page_requires_auth(client: TestClient):
     r = client.get("/groups", follow_redirects=False)
     assert r.status_code in (301, 302, 303, 307, 308)

@@ -149,6 +149,12 @@ services:
       - "${ADMIN_PORT:-8080}:8080"
     working_dir: /app
     user: bot
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     volumes:
       # rw: бот пишет runtime_status.json; админка дописывает строки [ADMIN] в лог событий (см. ADMIN_EVENTS_LOG_PATH).
       - ./data:/app/data
