@@ -16,7 +16,11 @@ router = APIRouter(tags=["dashboard"])
 
 
 def _admin() -> object:
-    """Late import to avoid circular dependency with main.py."""
+    """Late import to avoid circular dependency with main.py.
+
+    NOTE: Must use 'src.admin.main' to match test imports
+    (tests import 'src.admin.main', not 'admin.main').
+    """
     import admin.main as _m
     return _m
 

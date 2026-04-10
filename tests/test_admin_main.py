@@ -18,7 +18,7 @@ os.environ.pop("ADMIN_LOGINS", None)
 # Отключаем rate limiter до импорта admin_main (иначе _rate_limiter инициализируется до тестов)
 os.environ["ADMIN_DISABLE_RATE_LIMITS"] = "1"
 
-import src.admin.main as admin_main  # noqa: E402
+import admin.main as admin_main  # noqa: E402
 
 
 @pytest.fixture
