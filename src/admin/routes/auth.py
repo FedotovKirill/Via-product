@@ -90,7 +90,7 @@ async def setup_post(
         password_hash=hash_password(password), session_version=1,
     )
     session.add(user)
-    _admin_exists_cache.invalidate()
+    _admin_exists_cache.clear()
     return RedirectResponse("/onboarding", status_code=303)
 
 
