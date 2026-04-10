@@ -73,10 +73,16 @@ def write_env_file(env_file: Path, config: dict[str, str]) -> None:
 def main() -> None:
     regenerate = os.getenv("REGENERATE", "").lower() in ("1", "true", "yes", "on")
 
+    # Check if .env exists but has empty/placeholder values — treat as first run
     if ENV_FILE.exists() and not regenerate:
-        print(f"[INIT] ✅ .env file already exists at {ENV_FILE}, skipping generation.")
-        print(f"[INIT] To regenerate credentials, set REGENERATE=1 env variable.")
-        return
+        existing = parse_existing_env(ENV_FILE)
+        if existing.get("POSTGRES_PASSWORD") and existing.get("APP_MASTER_KEY"):
+            print(f"[INIT] ✅ .env file already exists at {ENV_FILE}, skipping generation.")
+            print(f"[INIT] To regenerate credentials, set REGENERATE=1 env variable.")
+            return
+        # File exists but values are missing/empty — regenerate
+        print(f"[INIT] 🔄 .env exists but has missing values, regenerating...")
+        regenerate = True
 
     credentials = generate_credentials()
 

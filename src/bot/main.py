@@ -1161,7 +1161,12 @@ async def main():
                     poll_interval,
                 )
         except Exception as e:
-            logger.error("Ошибка загрузки конфига: %s", e)
+            error_msg = str(e)
+            # Проверяем, не связана ли ошибка с отсутствием таблиц (БД еще инициализируется)
+            if "relation" in error_msg and "does not exist" in error_msg:
+                logger.warning("⏳ Ожидание инициализации БД (таблицы еще не созданы)...")
+            else:
+                logger.error("Ошибка загрузки конфига: %s", e)
 
         await asyncio.sleep(poll_interval)
 

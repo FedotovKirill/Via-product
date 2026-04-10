@@ -16,11 +16,17 @@ down_revision: Union[str, None] = "0014_bot_ops_audit_crud"
 def upgrade() -> None:
     # Drop onboarding_sessions table
     op.drop_index("ix_onboarding_sessions_sender_mxid", table_name="onboarding_sessions", if_exists=True)
-    op.drop_table("onboarding_sessions")
+    op.drop_table("onboarding_sessions", if_exists=True)
 
-    # Remove redmine_api_key_* columns from bot_users
+    # Remove redmine_api_key_* columns from bot_users (if they exist)
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    columns = [c["name"] for c in inspector.get_columns("bot_users")]
+
     for col in ("redmine_api_key_ciphertext", "redmine_api_key_nonce", "redmine_api_key_key_version"):
-        op.drop_column("bot_users", col, nullable=True)
+        if col in columns:
+            op.drop_column("bot_users", col)
 
 
 def downgrade() -> None:
