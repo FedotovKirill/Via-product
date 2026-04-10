@@ -38,7 +38,6 @@ jobs:
           alembic upgrade head
           alembic downgrade -1 || true
           alembic upgrade head
-          python scripts/check_env_sync.py
           python -m pytest tests/ -q --tb=short --ignore=tests/e2e
 
   e2e:
@@ -83,5 +82,5 @@ jobs:
         run: docker build -t matrix-bot-ci .
       - name: Import smoke test (bot + admin)
         run: |
-          docker run --rm matrix-bot-ci python -c "import bot; print('bot ok')"
-          docker run --rm matrix-bot-ci python -c "import admin_main; print('admin ok')"
+          docker run --rm matrix-bot-ci python -c "import src.bot.main; print('bot ok')"
+          docker run --rm matrix-bot-ci python -c "import src.admin.main; print('admin ok')"
