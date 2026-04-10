@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException
 
 from database.session import get_session
-from ops.docker_control import DockerControlError, get_service_status
+from ops.docker_control import DockerControlError
 
 router = APIRouter(tags=["dashboard"])
 
@@ -30,7 +30,7 @@ async def _dashboard_page(request: Request, session: AsyncSession):
         raise HTTPException(403, "Только admin")
     runtime_file = admin._runtime_status_from_file()
     try:
-        runtime_docker = get_service_status()
+        runtime_docker = admin.get_service_status()
     except DockerControlError as e:
         runtime_docker = {
             "state": "error",
@@ -89,7 +89,7 @@ async def dash_service_strip(request: Request):
         raise HTTPException(403, "Только admin")
     runtime_file = admin._runtime_status_from_file()
     try:
-        runtime_docker = get_service_status()
+        runtime_docker = admin.get_service_status()
     except DockerControlError as e:
         runtime_docker = {
             "state": "error",
