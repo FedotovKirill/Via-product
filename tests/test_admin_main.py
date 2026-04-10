@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 import os
 import re
+from collections.abc import Generator
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
@@ -19,8 +22,9 @@ import src.admin.main as admin_main  # noqa: E402
 
 
 @pytest.fixture
-def client():
-    return TestClient(admin_main.app)
+def client() -> Generator[TestClient, None, None]:
+    with TestClient(admin_main.app) as c:
+        yield c
 
 
 def test_audit_legacy_redirects_unauthenticated(client: TestClient):
