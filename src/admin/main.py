@@ -3142,9 +3142,10 @@ def _events_filter_query_dict(
 
 
 def _normalize_time_filter(value) -> str:
+    """Приводит value к строке, обрабатывает списки/кортежи."""
     if isinstance(value, (list, tuple)):
         value = value[0] if value else ""
-    raw = (value or "").strip()
+    raw = str(value).strip()
     if not raw:
         return ""
     if re.fullmatch(r"\d{2}:\d{2}", raw):
@@ -3170,7 +3171,10 @@ def _load_filtered_event_lines(date_from_s, date_to_s, time_at_s):
         filtered = parsed
     else:
         filtered = filter_parsed_lines_by_local_date(parsed, df, d_to, tz)
+    
+    # Нормализуем фильтр времени (внутри уже защита от типов)
     time_filter = _normalize_time_filter(time_at_s)
+    
     if time_filter and filtered:
         tf = str(time_filter)
         filtered = [
@@ -3189,6 +3193,11 @@ async def events_page(
     page: int = 1,
     page_size: int = 50,
 ):
+    # Явная защита от странных типов (например, кортежей из TestClient)
+    safe_date_from = str(date_from) if date_from else ""
+    safe_date_to = str(date_to) if date_to else ""
+    safe_time_at = str(time_at) if time_at else ""
+
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
@@ -3202,8 +3211,11 @@ async def events_page(
         page_size_i = 50
     page_size_i = min(200, max(5, page_size_i))
 
-    normalized_time = _normalize_time_filter(time_at)
-    rows, truncated, _log_path = _load_filtered_event_lines(date_from, date_to, normalized_time)
+    # Используем safe_ переменные, чтобы гарантировать строки
+    rows, truncated, _log_path = _load_filtered_event_lines(safe_date_from, safe_date_to, safe_time_at)
+    
+    # Для ссылок используем normalized_time (уже безопасно, так как safe_time_at — строка)
+    normalized_time = _normalize_time_filter(safe_time_at)
     total = len(rows)
     total_pages = max(1, (total + page_size_i - 1) // page_size_i) if total > 0 else 1
     page_i = max(1, min(page_i, total_pages))
@@ -3254,7 +3266,12 @@ async def events_export_csv(
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
-    rows, _truncated, _path = _load_filtered_event_lines(date_from, date_to, _normalize_time_filter(time_at))
+    
+    safe_date_from = str(date_from) if date_from else ""
+    safe_date_to = str(date_to) if date_to else ""
+    safe_time_at = str(time_at) if time_at else ""
+    
+    rows, _truncated, _path = _load_filtered_event_lines(safe_date_from, safe_date_to, safe_time_at)
     body = events_log_to_csv_bytes(rows, max_rows=50_000)
     stamp = _now_utc().strftime("%Y%m%d")
     return Response(
