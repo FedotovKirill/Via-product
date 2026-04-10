@@ -15,7 +15,6 @@
 
 import os
 import secrets
-import sys
 from pathlib import Path
 
 # Путь к .env файлу (в Docker: /app/.env, локально: ./env от корня проекта)
@@ -78,29 +77,29 @@ def main() -> None:
         existing = parse_existing_env(ENV_FILE)
         if existing.get("POSTGRES_PASSWORD") and existing.get("APP_MASTER_KEY"):
             print(f"[INIT] ✅ .env file already exists at {ENV_FILE}, skipping generation.")
-            print(f"[INIT] To regenerate credentials, set REGENERATE=1 env variable.")
+            print("[INIT] To regenerate credentials, set REGENERATE=1 env variable.")
             return
         # File exists but values are missing/empty — regenerate
-        print(f"[INIT] 🔄 .env exists but has missing values, regenerating...")
+        print("[INIT] 🔄 .env exists but has missing values, regenerating...")
         regenerate = True
 
     credentials = generate_credentials()
 
     if ENV_FILE.exists() and regenerate:
-        print(f"[INIT] 🔄 Regenerating credentials (existing .env will be overwritten)...")
+        print("[INIT] 🔄 Regenerating credentials (existing .env will be overwritten)...")
     else:
         print(f"[INIT] 🚀 First run: generating .env file at {ENV_FILE}...")
 
     write_env_file(ENV_FILE, credentials)
 
-    print(f"[INIT] ✅ .env file created successfully!")
+    print("[INIT] ✅ .env file created successfully!")
     print(f"[INIT] 📝 POSTGRES_PASSWORD: {credentials['POSTGRES_PASSWORD']}")
     print(f"[INIT] 🔑 APP_MASTER_KEY: {credentials['APP_MASTER_KEY']}")
-    print(f"[INIT] ⚠️  IMPORTANT: Save these credentials securely!")
-    print(f"[INIT] 💡 You can view them later in the admin panel at /onboarding")
+    print("[INIT] ⚠️  IMPORTANT: Save these credentials securely!")
+    print("[INIT] 💡 You can view them later in the admin panel at /onboarding")
 
     if regenerate:
-        print(f"[INIT] 🔄 After regenerating, restart containers: docker compose restart postgres bot admin")
+        print("[INIT] 🔄 After regenerating, restart containers: docker compose restart postgres bot admin")
 
 
 if __name__ == "__main__":

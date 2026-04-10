@@ -5,15 +5,16 @@ Revises: 0010_support_group_schedule
 Create Date: 2026-04-02
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0011_group_user_version_routes"
-down_revision: Union[str, None] = "0010_support_group_schedule"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0010_support_group_schedule"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

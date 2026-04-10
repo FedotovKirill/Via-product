@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from database.load_config import user_orm_to_cfg  # noqa: E402
+from database.load_config import user_orm_to_cfg
 
 
 class _FakeUser:

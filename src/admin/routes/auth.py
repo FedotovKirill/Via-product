@@ -11,20 +11,32 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from admin.helpers import (
+    AUTH_TOKEN_SALT,
+    COOKIE_SECURE,
+    CSRF_COOKIE_NAME,
+    DASHBOARD_PATH,
+    SESSION_COOKIE_NAME,
+    SESSION_TTL_SECONDS,
+    SETUP_PATH,
+    _admin_exists_cache,
+    _append_ops_to_events_log,
+    _client_ip,
+    _ensure_csrf,
+    _generic_login_error,
+    _has_admin,
+    _login_allowed,
+    _login_format_ok,
+    _normalize_login,
+    _now_utc,
+    _rate_limiter,
+    _verify_csrf,
+    templates,
+)
 from database.models import BotAppUser, BotSession, PasswordResetToken
 from database.session import get_session, get_session_factory
 from mail import mask_identifier
 from security import hash_password, token_hash, validate_password_policy, verify_password
-
-from admin.helpers import (
-    _ensure_csrf, _verify_csrf, _normalize_login, _login_format_ok,
-    _login_allowed, _generic_login_error, _has_admin, _client_ip,
-    _rate_limiter, _now_utc, _append_ops_to_events_log,
-    _admin_exists_cache,
-    CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS,
-    COOKIE_SECURE, AUTH_TOKEN_SALT, SETUP_PATH, DASHBOARD_PATH,
-    templates,
-)
 
 router = APIRouter(tags=["auth"])
 

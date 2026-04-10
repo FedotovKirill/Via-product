@@ -10,19 +10,18 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import delete, insert, select, update, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy import or_
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import BotIssueState, BotUserLease
 
 
 def _iso(dt: datetime) -> str:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 

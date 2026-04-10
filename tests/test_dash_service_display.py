@@ -1,6 +1,6 @@
 """Тесты форматирования блока «Сервис» на дашборде."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -26,8 +26,8 @@ def test_parse_docker_started_at_zero_sentinel():
 
 
 def test_humanize_skips_zero_units():
-    base = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    now = datetime(2026, 1, 3, 14, 30, 45, tzinfo=timezone.utc)
+    base = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    now = datetime(2026, 1, 3, 14, 30, 45, tzinfo=UTC)
     s = humanize_uptime_ru(base, now)
     assert "дн" in s or "день" in s or "дня" in s or "дней" in s
     assert "час" in s
@@ -36,8 +36,8 @@ def test_humanize_skips_zero_units():
 
 
 def test_humanize_no_trailing_zero_seconds():
-    base = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    now = datetime(2026, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    now = datetime(2026, 1, 1, 13, 0, 0, tzinfo=UTC)
     s = humanize_uptime_ru(base, now)
     assert "1 час" in s or "1 часа" in s
     assert "0 секунд" not in s
@@ -48,7 +48,7 @@ def test_bot_status_restarting():
 
 
 def test_format_local_started_at_dmy():
-    dt = datetime(2026, 4, 2, 6, 42, 44, tzinfo=timezone.utc)
+    dt = datetime(2026, 4, 2, 6, 42, 44, tzinfo=UTC)
     assert format_local_started_at(dt, "Europe/Moscow") == "02.04.2026 09:42:44"
 
 

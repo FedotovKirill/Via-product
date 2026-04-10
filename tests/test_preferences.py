@@ -6,18 +6,17 @@
 
 from datetime import datetime, time
 
-import pytest
+from config import PRIORITY_EMERGENCY
 from preferences import (
+    DEFAULT_WORK_DAYS,
+    DEFAULT_WORK_END,
+    DEFAULT_WORK_START,
     can_notify,
     get_work_days,
     get_work_hours,
     is_dnd,
     is_working_time,
-    DEFAULT_WORK_START,
-    DEFAULT_WORK_END,
-    DEFAULT_WORK_DAYS,
 )
-from config import PRIORITY_EMERGENCY
 from utils import BOT_TZ
 
 

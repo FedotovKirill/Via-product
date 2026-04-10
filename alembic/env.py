@@ -1,16 +1,10 @@
 import os
-import sys
 from logging.config import fileConfig
-from pathlib import Path
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
 
-# src/ в PYTHONPATH — пакет database
-_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_ROOT / "src"))
-
+from alembic import context
 from database.models import Base  # noqa: E402
 from database.session import sync_database_url_for_alembic  # noqa: E402
 

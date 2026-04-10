@@ -8,17 +8,13 @@ import os
 import re
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlencode
 
 from cachetools import TTLCache
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
-
-from database.session import get_session_factory
-from mail import mask_identifier
 
 logger = logging.getLogger("redmine_admin")
 
@@ -50,8 +46,7 @@ def _format_datetime_ui(dt) -> str:
         except ValueError:
             return str(dt)
     if dt.tzinfo is None:
-        from datetime import timezone
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
@@ -118,7 +113,7 @@ _integration_status_cache = TTLCache(maxsize=1, ttl=30)
 # ── Time helpers ─────────────────────────────────────────────────────────────
 
 def _now_utc() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 # ── Login helpers ───────────────────────────────────────────────────────────
 
@@ -127,7 +122,7 @@ _ALLOWED_LOGINS_RAW = (os.getenv("ADMIN_LOGINS") or "").strip()
 def _login_allowed(login: str) -> bool:
     if not _ALLOWED_LOGINS_RAW:
         return True
-    return login in (l.strip() for l in _ALLOWED_LOGINS_RAW.split(","))
+    return login in (entry.strip() for entry in _ALLOWED_LOGINS_RAW.split(","))
 
 _GENERIC_LOGIN_ERROR = "Неверный логин или пароль"
 
@@ -177,6 +172,7 @@ async def _has_admin(session, use_cache: bool = True) -> bool:
         if cached is not None:
             return bool(cached)
     from sqlalchemy import select
+
     from database.models import BotAppUser
     r = await session.execute(
         select(BotAppUser.id).where(BotAppUser.role == "admin").limit(1)
@@ -227,7 +223,6 @@ def _mask_secret(value: str | None, mask_url: bool = False) -> str:
 # ── Catalog parsing ──────────────────────────────────────────────────────────
 
 def _parse_catalog_payload(notify_json: str, versions_json: str) -> tuple[list[str], list[str]]:
-    import json
     try:
         notify = json.loads(notify_json) if notify_json else []
     except (json.JSONDecodeError, TypeError):

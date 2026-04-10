@@ -9,50 +9,55 @@ import json
 import logging
 import logging.handlers
 import os
-import sys
-import uuid
 import time
-from datetime import datetime, timedelta, timezone
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-_SRC_DIR = Path(__file__).resolve().parents[2] / "src"
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
+from redminelib.exceptions import AuthError, BaseRedmineError, ForbiddenError
 
-from utils import safe_html
-from matrix_send import room_send_with_retry
+from bot.logic import (
+    NOTIFICATION_TYPES,
+    STATUS_INFO_PROVIDED,
+    STATUS_NEW,
+    STATUS_REOPENED,
+    STATUS_RV,
+    STATUSES_TRANSFERRED,
+    _cfg_for_room,
+    _group_room,
+    _issue_priority_name,
+    describe_journal,
+    detect_new_journals,
+    detect_status_change,
+    get_version_name,
+    plural_days,
+    resolve_field_value,
+    should_notify,
+    validate_users,
+)
+from bot.logic import (
+    _group_member_rooms as _group_member_rooms_raw,
+)
+from bot.logic import (
+    ensure_tz as _ensure_tz_raw,
+)
+from bot.logic import (
+    get_extra_rooms_for_new as _get_extra_rooms_for_new_raw,
+)
+from bot.logic import (
+    get_extra_rooms_for_rv as _get_extra_rooms_for_rv_raw,
+)
 from config import (
     LOG_FILE,
+    env_placeholder_hints,
     log_file_backup_count,
     log_file_max_bytes,
     want_log_file,
 )
+from matrix_send import room_send_with_retry
 from preferences import can_notify
-from redminelib.exceptions import AuthError, BaseRedmineError, ForbiddenError
-from bot.logic import (
-    STATUS_NEW,
-    STATUS_INFO_PROVIDED,
-    STATUS_REOPENED,
-    STATUS_RV,
-    STATUSES_TRANSFERRED,
-    NOTIFICATION_TYPES,
-    plural_days,
-    ensure_tz as _ensure_tz_raw,
-    get_version_name,
-    should_notify,
-    _issue_priority_name,
-    validate_users,
-    get_extra_rooms_for_new as _get_extra_rooms_for_new_raw,
-    get_extra_rooms_for_rv as _get_extra_rooms_for_rv_raw,
-    _group_member_rooms as _group_member_rooms_raw,
-    _group_room,
-    _cfg_for_room,
-    detect_status_change,
-    detect_new_journals,
-    describe_journal,
-    resolve_field_value,
-)
+from utils import safe_html
 
 # Re-export для тестов (чистые функции из logic.py)
 __all__ = [
@@ -83,11 +88,10 @@ def _group_member_rooms(user_cfg: dict) -> set[str]:
     """Wrapper для тестов — передаёт USERS."""
     return _group_member_rooms_raw(user_cfg, USERS)
 
-from dotenv import load_dotenv
-from redminelib import Redmine
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from redminelib import Redmine
 
-load_dotenv()
+# load_dotenv() вызывается в config.py — единственный источник загрузки .env
 
 # ═══════════════════════════════════════════════════════════════════════════
 # НАСТРОЙКИ ИЗ .env (не-секретные)
@@ -633,7 +637,7 @@ async def check_all_users(client, redmine):
     async with session_factory() as session:
         for user_cfg in USERS:
             uid = user_cfg.get("redmine_id")
-            lease_until = datetime.now(timezone.utc) + timedelta(seconds=lease_ttl)
+            lease_until = datetime.now(UTC) + timedelta(seconds=lease_ttl)
             try:
                 acquired = await try_acquire_user_lease(
                     session,
@@ -795,9 +799,10 @@ async def main():
         logger.warning("⚠ Похоже на плейсхолдер из .env.example (замените в .env): %s", hint)
 
     # --- Ожидание готовности конфигурации из БД ---
+    from sqlalchemy import text
+
     from database.session import get_session_factory
     from security import decrypt_secret, load_master_key
-    from sqlalchemy import text
 
     poll_interval = 30  # секунд между попытками
     session_factory = get_session_factory()

@@ -5,18 +5,11 @@
 from __future__ import annotations
 
 import os
-import sys
-from collections.abc import Generator
-from pathlib import Path
 from datetime import date, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_PROJECT_ROOT / "src"))
-sys.path.insert(0, str(_PROJECT_ROOT))  # Для import src.bot.main
 
 # До импорта admin_main / database.session (иначе engine создастся без NullPool).
 os.environ.setdefault("SQLALCHEMY_NULL_POOL", "1")

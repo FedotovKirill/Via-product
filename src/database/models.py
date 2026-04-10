@@ -20,7 +20,6 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     LargeBinary,
-    SmallInteger,
     String,
     Text,
     UniqueConstraint,

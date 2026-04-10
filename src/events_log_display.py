@@ -14,7 +14,7 @@ import io
 import os
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 # Стандартный asctime logging: 2026-04-02 06:21:14,317
@@ -57,7 +57,7 @@ def reformat_log_line(line: str, *, display_tz: ZoneInfo, assume_utc: bool) -> s
         except ValueError:
             return line
         if assume_utc:
-            aware = naive.replace(tzinfo=timezone.utc)
+            aware = naive.replace(tzinfo=UTC)
         else:
             aware = naive.replace(tzinfo=display_tz)
         local = aware.astimezone(display_tz)
@@ -110,7 +110,7 @@ def parse_events_log_line(line: str, *, display_tz: ZoneInfo, assume_utc: bool) 
         except ValueError:
             return _unparsed_line(raw)
         if assume_utc:
-            aware = naive.replace(tzinfo=timezone.utc)
+            aware = naive.replace(tzinfo=UTC)
         else:
             aware = naive.replace(tzinfo=display_tz)
         local = aware.astimezone(display_tz)
@@ -174,7 +174,7 @@ def parse_events_log_for_table(raw: str) -> list[ParsedLogLine]:
             continue
         out.append(parse_events_log_line(line, display_tz=tz, assume_utc=assume))
 
-    min_utc = datetime.min.replace(tzinfo=timezone.utc)
+    min_utc = datetime.min.replace(tzinfo=UTC)
 
     def sk(pl: ParsedLogLine) -> datetime:
         return pl.sort_key if pl.sort_key is not None else min_utc

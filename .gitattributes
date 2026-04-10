@@ -1,0 +1,13 @@
+# Автозамена CRLF → LF при коммите (кроссплатформенная консистность)
+* text=auto eol=lf
+
+# Бинарные файлы — без изменений
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+
+# Исключения: Windows-скрипты (если появятся)
+# *.bat text eol=crlf

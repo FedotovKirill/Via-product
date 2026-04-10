@@ -7,11 +7,9 @@ from collections.abc import Generator
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
-
 
 # Для password auth и encrypted-secrets на старте нужен master key.
 os.environ.setdefault("APP_MASTER_KEY", "0123456789abcdef0123456789abcdef")

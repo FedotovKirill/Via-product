@@ -6,7 +6,7 @@
 и из других модулей src/.
 """
 
-from datetime import datetime, date
+from datetime import date, datetime
 from html import escape as _html_escape
 from zoneinfo import ZoneInfo
 

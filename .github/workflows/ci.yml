@@ -24,13 +24,15 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://bot:postgres@localhost:5432/via
-      APP_MASTER_KEY: 0123456789abcdef0123456789abcdef
       ADMIN_DISABLE_RATE_LIMITS: "1"
+      PYTHONPATH: ${{ github.workspace }}/src
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Generate APP_MASTER_KEY
+        run: echo "APP_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
       - name: Install dependencies
         run: |
           pip install -r requirements.txt -r requirements-test.txt
@@ -59,13 +61,15 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://bot:postgres@localhost:5432/via
-      APP_MASTER_KEY: 0123456789abcdef0123456789abcdef
       ADMIN_DISABLE_RATE_LIMITS: "1"
+      PYTHONPATH: ${{ github.workspace }}/src
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Generate APP_MASTER_KEY
+        run: echo "APP_MASTER_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
       - name: Install dependencies
         run: |
           pip install -r requirements.txt -r requirements-test.txt

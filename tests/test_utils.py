@@ -4,12 +4,12 @@
 Без сети и Redmine — быстрые unit-тесты на граничные значения и экранирование HTML.
 """
 
-from datetime import datetime, date
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
+
 import pytest
 
-from utils import plural_days, now_tz, today_tz, ensure_tz, safe_html, set_timezone, BOT_TZ
-
+from utils import ensure_tz, now_tz, plural_days, safe_html, set_timezone, today_tz
 
 # ═══════════════════════════════════════════════════════════════
 # plural_days

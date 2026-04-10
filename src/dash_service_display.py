@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -33,8 +33,8 @@ def parse_docker_started_at(raw: str) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _ru_unit(n: int, one: str, few: str, many: str) -> str:
@@ -56,10 +56,10 @@ def humanize_uptime_ru(started_at: datetime | None, now: datetime | None = None)
     """
     if started_at is None:
         return "—"
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=timezone.utc)
-    sec_total = int((now - started_at.astimezone(timezone.utc)).total_seconds())
+        started_at = started_at.replace(tzinfo=UTC)
+    sec_total = int((now - started_at.astimezone(UTC)).total_seconds())
     if sec_total < 0:
         return "—"
     if sec_total == 0:

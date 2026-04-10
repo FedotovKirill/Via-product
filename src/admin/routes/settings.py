@@ -1,0 +1,163 @@
+"""Settings routes: /settings/db-config."""
+
+from __future__ import annotations
+
+import os
+import secrets
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database.session import get_session
+from security import decrypt_secret, encrypt_secret, load_master_key
+
+router = APIRouter(tags=["settings"])
+
+_ENV_FILE_PATH = Path("/app/.env")
+
+
+def _load_db_config_from_env() -> dict[str, str]:
+    """Читает DB credentials из .env файла."""
+    if not _ENV_FILE_PATH.exists():
+        return {
+            "postgres_user": "bot",
+            "postgres_db": "via",
+            "postgres_password": "",
+            "app_master_key": "",
+        }
+
+    config = {}
+    for line in _ENV_FILE_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            config[key.strip()] = value.strip()
+
+    return {
+        "postgres_user": config.get("POSTGRES_USER", "bot"),
+        "postgres_db": config.get("POSTGRES_DB", "via"),
+        "postgres_password": config.get("POSTGRES_PASSWORD", ""),
+        "app_master_key": config.get("APP_MASTER_KEY", ""),
+    }
+
+
+def _update_env_file(updates: dict[str, str]) -> None:
+    """Обновляет переменные в .env файле, сохраняя остальные."""
+    if not _ENV_FILE_PATH.exists():
+        raise RuntimeError(".env file not found")
+
+    lines = _ENV_FILE_PATH.read_text(encoding="utf-8").splitlines()
+    new_lines = []
+    updated_keys = set()
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}")
+                updated_keys.add(key)
+                continue
+        new_lines.append(line)
+
+    for key, value in updates.items():
+        if key not in updated_keys:
+            new_lines.append(f"{key}={value}")
+
+    _ENV_FILE_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+def _admin() -> object:
+    """Late import to avoid circular dependency with main.py."""
+    import admin.main as _m
+    return _m
+
+
+@router.get("/settings/db-config", response_class=JSONResponse)
+async def get_db_config(request: Request, session: AsyncSession = Depends(get_session)):
+    """Возвращает текущие DB credentials из .env (только для admin)."""
+    user = getattr(request.state, "current_user", None)
+    if not user or getattr(user, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+
+    config = _load_db_config_from_env()
+    return {
+        "ok": True,
+        "postgres_user": config["postgres_user"],
+        "postgres_db": config["postgres_db"],
+        "postgres_password": config["postgres_password"],
+        "app_master_key": config["app_master_key"],
+    }
+
+
+@router.post("/settings/db-config/regenerate", response_class=JSONResponse)
+async def regenerate_db_config(
+    request: Request,
+    regenerate_password: Annotated[str, Form()] = "1",
+    regenerate_key: Annotated[str, Form()] = "1",
+    csrf_token: Annotated[str, Form()] = "",
+    session: AsyncSession = Depends(get_session),
+):
+    """Генерирует новые credentials и обновляет .env."""
+    admin = _admin()
+    user = getattr(request.state, "current_user", None)
+    if not user or getattr(user, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+
+    admin._verify_csrf(request, csrf_token)
+
+    new_password = secrets.token_urlsafe(24) if regenerate_password == "1" else None
+    new_master_key = secrets.token_hex(32) if regenerate_key == "1" else None
+
+    updates = {}
+    if new_password:
+        updates["POSTGRES_PASSWORD"] = new_password
+    if new_master_key:
+        updates["APP_MASTER_KEY"] = new_master_key
+
+    if updates:
+        _update_env_file(updates)
+
+    if new_master_key:
+        key = new_master_key.encode("utf-8")
+        from database.models import AppSecret
+        from sqlalchemy import select
+        rows = await session.execute(select(AppSecret))
+        for row in rows.scalars().all():
+            try:
+                old_val = decrypt_secret(row.ciphertext, row.nonce, load_master_key())
+                enc = encrypt_secret(old_val, key)
+                row.ciphertext = enc.ciphertext
+                row.nonce = enc.nonce
+                row.key_version = enc.key_version
+            except Exception:
+                pass
+        await session.commit()
+
+    if new_password:
+        from sqlalchemy import text
+        try:
+            cfg = _load_db_config_from_env()
+            sync_url = os.environ.get("DATABASE_URL", "").replace(
+                cfg["postgres_password"], new_password
+            )
+            if sync_url:
+                engine_url = admin.sync_database_url_for_alembic(sync_url)
+                from sqlalchemy import create_engine
+                eng = create_engine(engine_url)
+                with eng.connect() as c:
+                    c.execute(text(f"ALTER USER {cfg['postgres_user']} WITH PASSWORD '{new_password}'"))
+                    c.commit()
+                eng.dispose()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    result = {"ok": True}
+    if new_password:
+        result["postgres_password"] = new_password
+    if new_master_key:
+        result["app_master_key"] = new_master_key
+    return result

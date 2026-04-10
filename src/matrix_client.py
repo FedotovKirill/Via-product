@@ -14,12 +14,12 @@ import re
 from nio import AsyncClient
 
 from config import (
-    MATRIX_HOMESERVER,
     MATRIX_ACCESS_TOKEN,
-    MATRIX_USER_ID,
     MATRIX_DEVICE_ID,
+    MATRIX_HOMESERVER,
+    MATRIX_USER_ID,
 )
-from matrix_send import room_send_with_retry, MAX_RETRIES
+from matrix_send import MAX_RETRIES, room_send_with_retry
 
 logger = logging.getLogger("redmine_bot")
 

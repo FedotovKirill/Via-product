@@ -36,7 +36,8 @@ FROM python:3.11-slim-bookworm AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app/src"
 
 # Непривилегированный пользователь: процесс в контейнере не root (best practice).
 RUN groupadd --system --gid 1000 bot && \

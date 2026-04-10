@@ -2,28 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import threading
 import time
-import asyncio
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from urllib.parse import urlencode
-
-from database.session import get_session, get_session_factory
-from database.models import BotAppUser, BotHeartbeat, BotOpsAudit
-from ops.docker_control import control_service, get_service_status, DockerControlError
 
 from admin.helpers import (
-    _verify_csrf, _client_ip, _rate_limiter, _append_ops_to_events_log,
-    _now_utc, DASHBOARD_PATH, _append_audit_file_line,
+    DASHBOARD_PATH,
+    _append_audit_file_line,
+    _append_ops_to_events_log,
+    _client_ip,
+    _now_utc,
+    _rate_limiter,
+    _verify_csrf,
 )
+from database.models import BotHeartbeat, BotOpsAudit
+from database.session import get_session, get_session_factory
+from ops.docker_control import DockerControlError, control_service, get_service_status
 
 logger = logging.getLogger("redmine_admin")
 
@@ -154,7 +157,6 @@ async def bot_ops_action(
 
 @router.post("/api/bot/heartbeat")
 async def bot_heartbeat(session: AsyncSession = Depends(get_session)):
-    from database.models import BotHeartbeat
     from sqlalchemy import insert
     stmt = insert(BotHeartbeat).values(
         instance_id=os.getenv("BOT_INSTANCE_ID", "default"),

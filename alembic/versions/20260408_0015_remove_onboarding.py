@@ -4,13 +4,13 @@ Revision ID: 0015_remove_onboarding
 Revises: 0013_bot_user_timezone
 Create Date: 2026-04-08
 """
-from typing import Union
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0015_remove_onboarding"
-down_revision: Union[str, None] = "0014_bot_ops_audit_crud"
+down_revision: str | None = "0014_bot_ops_audit_crud"
 
 
 def upgrade() -> None:

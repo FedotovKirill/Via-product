@@ -13,7 +13,6 @@ from datetime import time
 from config import PRIORITY_EMERGENCY
 from utils import now_tz
 
-
 # ═══════════════════════════════════════════════════════════════
 # ДЕФОЛТЫ
 # ═══════════════════════════════════════════════════════════════

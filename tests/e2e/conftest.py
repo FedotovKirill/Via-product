@@ -10,16 +10,15 @@ E2E: реальный HTTP-сервер (uvicorn) + браузер Playwright.
 
 from __future__ import annotations
 
+import http.cookiejar
 import os
 import re
 import socket
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
-import http.cookiejar
-
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, Request, build_opener

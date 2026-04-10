@@ -5,9 +5,7 @@
 нужно при старте, чтобы не падать на кривом USERS в .env.
 """
 
-import pytest
-from config import validate_users, should_notify, validate_required_env
-
+from config import should_notify, validate_users
 
 # ═══════════════════════════════════════════════════════════════
 # validate_users
@@ -129,13 +127,13 @@ class TestLogPaths:
 
     def test_resolved_log_file_default(self, monkeypatch):
         monkeypatch.delenv("LOG_PATH", raising=False)
-        from config import resolved_log_file, BASE_DIR
+        from config import BASE_DIR, resolved_log_file
 
         assert resolved_log_file() == BASE_DIR / "data" / "bot.log"
 
     def test_resolved_log_file_relative(self, monkeypatch):
         monkeypatch.setenv("LOG_PATH", "logs/app.log")
-        from config import resolved_log_file, BASE_DIR
+        from config import BASE_DIR, resolved_log_file
 
         assert resolved_log_file() == BASE_DIR / "logs" / "app.log"
 

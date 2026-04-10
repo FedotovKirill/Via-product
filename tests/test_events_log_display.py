@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
-
 from datetime import date
+from zoneinfo import ZoneInfo
+
+import pytest
 
 from events_log_display import (
     admin_events_log_timestamp_now,
@@ -14,7 +15,6 @@ from events_log_display import (
     parse_events_log_for_table,
     reformat_log_line,
 )
-from zoneinfo import ZoneInfo
 
 
 def test_reformat_iso_strips_ms_and_converts_utc_to_moscow(monkeypatch):

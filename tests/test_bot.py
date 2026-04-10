@@ -10,10 +10,8 @@
 """
 
 import os
-import asyncio
-from datetime import datetime, date, timedelta
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from datetime import date, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -29,8 +27,8 @@ os.environ.setdefault("MATRIX_ONBOARDING_ENABLED", "0")
 os.environ.setdefault("BOT_TIMEZONE", "Europe/Moscow")
 os.environ.setdefault("USERS", '[{"redmine_id": 1972, "room": "!test:server", "notify": ["all"]}]')
 
-import src.bot.main as bot
 import matrix_send
+import src.bot.main as bot
 from tests.conftest import MockIssue, MockJournal
 
 # can_notify: круглосуточно и все дни недели — тесты не зависят от времени CI

@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.session import get_session
 from database.models import BotAppUser
-from security import SecurityError, load_master_key
+from database.session import get_session
 from ops.docker_control import DockerControlError, get_service_status
+from security import SecurityError, load_master_key
 
 router = APIRouter(tags=["health"])
 

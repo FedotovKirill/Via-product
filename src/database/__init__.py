@@ -6,11 +6,11 @@ from .models import (
     BotAppUser,
     BotIssueState,
     BotMagicToken,
-    PasswordResetToken,
+    BotSession,
     BotUser,
     BotUserLease,
-    BotSession,
     MatrixRoomBinding,
+    PasswordResetToken,
     StatusRoomRoute,
     VersionRoomRoute,
 )

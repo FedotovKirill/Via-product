@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Emergency script: reset admin password directly in DB."""
+"""Emergency script: reset admin password directly in DB.
+
+Requires PYTHONPATH pointing to src/ (set in .env or pass on CLI).
+"""
 
 from __future__ import annotations
 
@@ -8,8 +11,10 @@ import asyncio
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(ROOT, "src"))
+# Standalone fallback: if PYTHONPATH not set, add src/ manually.
+if not any("src" in p for p in sys.path):
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from sqlalchemy import delete, select
 

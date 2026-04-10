@@ -2,7 +2,7 @@ import asyncio
 import os
 import subprocess
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import delete, text
@@ -64,12 +64,12 @@ async def test_lease_single_owner():
     await _delete_lease_for_uid(factory, uid)
 
     async with factory() as session:
-        until1 = datetime.now(timezone.utc) + timedelta(seconds=300)
+        until1 = datetime.now(UTC) + timedelta(seconds=300)
         ok1 = await try_acquire_user_lease(session, uid, owner1, until1)
         await session.commit()
         assert ok1 is True
 
-        until2 = datetime.now(timezone.utc) + timedelta(seconds=300)
+        until2 = datetime.now(UTC) + timedelta(seconds=300)
         ok2 = await try_acquire_user_lease(session, uid, owner2, until2)
         await session.commit()
         assert ok2 is False
@@ -88,13 +88,13 @@ async def test_lease_expiry_allows_new_owner():
     await _delete_lease_for_uid(factory, uid)
 
     async with factory() as session:
-        until1 = datetime.now(timezone.utc) + timedelta(seconds=300)
+        until1 = datetime.now(UTC) + timedelta(seconds=300)
         ok1 = await try_acquire_user_lease(session, uid, owner1, until1)
         await session.commit()
         assert ok1 is True
 
         # истекаем lease в прошлом
-        past = datetime.now(timezone.utc) - timedelta(seconds=1)
+        past = datetime.now(UTC) - timedelta(seconds=1)
         await session.execute(
             text(
                 "UPDATE bot_user_leases SET lease_until = :past, lease_owner_id = :owner WHERE user_redmine_id = :uid"
@@ -102,7 +102,7 @@ async def test_lease_expiry_allows_new_owner():
         )
         await session.commit()
 
-        until2 = datetime.now(timezone.utc) + timedelta(seconds=300)
+        until2 = datetime.now(UTC) + timedelta(seconds=300)
         ok2 = await try_acquire_user_lease(session, uid, owner2, until2)
         await session.commit()
         assert ok2 is True
@@ -118,7 +118,7 @@ async def test_upsert_and_load_state():
     uid = 1972
     iid = "100"
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sent_at = now - timedelta(minutes=10)
     reminder_at = now - timedelta(minutes=5)
     overdue_at = now - timedelta(days=1)
@@ -153,14 +153,13 @@ async def test_reminder_and_overdue_conditions_from_loaded_state():
     await ensure_migrated()
     from database.session import get_session_factory
     from database.state_repo import load_user_issue_state, upsert_user_issue_state
-
     from src.bot.main import REMINDER_AFTER, ensure_tz
 
     factory = get_session_factory()
     uid = 1972
     iid = "100"
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sent_at = now - timedelta(minutes=10)
     reminder_at = now - timedelta(seconds=REMINDER_AFTER + 10)
     overdue_at = now - timedelta(days=2)
@@ -206,7 +205,7 @@ async def test_concurrent_lease_one_winner():
 
     async def worker(owner):
         async with factory() as session:
-            until = datetime.now(timezone.utc) + timedelta(seconds=300)
+            until = datetime.now(UTC) + timedelta(seconds=300)
             ok = await try_acquire_user_lease(session, uid, owner, until)
             await session.commit()
             return ok

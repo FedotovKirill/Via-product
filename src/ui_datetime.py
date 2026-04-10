@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -27,6 +27,6 @@ def format_datetime_ui(value: Any) -> str:
         return "—"
     dt = value
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     local = dt.astimezone(bot_display_timezone())
     return local.strftime("%d.%m.%Y %H:%M:%S")
