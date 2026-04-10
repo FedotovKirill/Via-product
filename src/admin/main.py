@@ -3141,7 +3141,9 @@ def _events_filter_query_dict(
     return d
 
 
-def _normalize_time_filter(value: str) -> str:
+def _normalize_time_filter(value) -> str:
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
     raw = (value or "").strip()
     if not raw:
         return ""
@@ -3150,7 +3152,7 @@ def _normalize_time_filter(value: str) -> str:
     return ""
 
 
-def _load_filtered_event_lines(date_from_s: str, date_to_s: str, time_at_s: str):
+def _load_filtered_event_lines(date_from_s, date_to_s, time_at_s):
     path = _admin_events_log_path()
     raw, truncated = _read_events_log_scan(path, max_bytes=_admin_events_log_scan_bytes())
     parsed = parse_events_log_for_table(raw)
@@ -3170,13 +3172,11 @@ def _load_filtered_event_lines(date_from_s: str, date_to_s: str, time_at_s: str)
         filtered = filter_parsed_lines_by_local_date(parsed, df, d_to, tz)
     time_filter = _normalize_time_filter(time_at_s)
     if time_filter and filtered:
-        # Гарантируем, что time_filter — строка
-        tf = str(time_filter) if isinstance(time_filter, str) else ""
-        if tf:
-            filtered = [
-                row for row in filtered
-                if str(getattr(row, "time_ui", "") or "").startswith(tf)
-            ]
+        tf = str(time_filter)
+        filtered = [
+            row for row in filtered
+            if str(getattr(row, "time_ui", "") or "").startswith(tf)
+        ]
     return filtered, truncated, path
 
 
