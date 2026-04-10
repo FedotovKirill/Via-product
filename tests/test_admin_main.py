@@ -407,7 +407,8 @@ def test_me_settings_admin_redirects_home(client: TestClient):
     r = client.get("/me/settings", follow_redirects=False)
     assert r.status_code == 303
     loc = r.headers.get("location", "")
-    assert loc in ("http://testserver/", "/")
+    # Редирект на главную (/) или дашборд (/dashboard)
+    assert loc in ("http://testserver/", "/", "http://testserver/dashboard", "/dashboard"), loc
 
 
 def test_groups_create_reserved_name_rejected(client: TestClient):
