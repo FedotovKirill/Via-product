@@ -38,7 +38,7 @@ def test_audit_legacy_redirects_unauthenticated(client: TestClient):
 
 def test_audit_legacy_redirects_to_events_for_admin(client: TestClient):
     db_url = os.getenv("DATABASE_URL", "")
-    if not db_url.startswith("postgresql://"):
+    if not str(db_url).startswith("postgresql://"):
         pytest.skip("Тест требует Postgres (DATABASE_URL)")
     _setup_and_login_admin(client)
     r = client.get("/audit?date_from=2024-01-02", follow_redirects=False)
@@ -51,7 +51,7 @@ def test_audit_legacy_redirects_to_events_for_admin(client: TestClient):
 
 def test_events_page_includes_events_table(client: TestClient):
     db_url = os.getenv("DATABASE_URL", "")
-    if not db_url.startswith("postgresql://"):
+    if not str(db_url).startswith("postgresql://"):
         pytest.skip("Тест требует Postgres (DATABASE_URL)")
     _setup_and_login_admin(client)
     r = client.get("/events")
