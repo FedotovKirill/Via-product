@@ -1,4 +1,4 @@
-"""Settings routes: /settings/db-config."""
+"""Settings routes: /onboarding, /settings/db-config."""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from database.models import AppSecret
 from database.session import get_session
 from security import decrypt_secret, encrypt_secret, load_master_key
 
@@ -168,3 +170,100 @@ async def regenerate_db_config(
     if new_master_key:
         result["app_master_key"] = new_master_key
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Onboarding / Настройки сервиса
+# ═══════════════════════════════════════════════════════════════════════════
+
+_SECRET_NAMES = [
+    "REDMINE_URL",
+    "REDMINE_API_KEY",
+    "MATRIX_HOMESERVER",
+    "MATRIX_ACCESS_TOKEN",
+    "MATRIX_USER_ID",
+]
+
+
+def _mask_secret_value(value: str) -> str:
+    """Маскирует секрет: показывает первые 4 и последние 4 символа."""
+    if not value or len(value) <= 8:
+        return "••••••••"
+    return value[:4] + "•" * (len(value) - 8) + value[-4:]
+
+
+@router.get("/onboarding", response_class=HTMLResponse)
+async def onboarding_page(request: Request, session: AsyncSession = Depends(get_session)):
+    """Страница настроек сервиса (onboarding)."""
+    admin = _admin()
+    user = getattr(request.state, "current_user", None)
+    if not user or getattr(user, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+
+    # Загружаем секреты из БД
+    secrets_raw: dict[str, str] = {}
+    secrets_masked: dict[str, str] = {}
+
+    rows = await session.execute(select(AppSecret))
+    for row in rows.scalars().all():
+        try:
+            val = decrypt_secret(row.ciphertext, row.nonce, load_master_key())
+            secrets_raw[row.name] = val
+            secrets_masked[row.name] = _mask_secret_value(val)
+        except Exception:
+            secrets_masked[row.name] = "••••••••"
+
+    notify_catalog, versions_catalog = await admin._load_catalogs(session)
+    csrf_token, _ = admin._ensure_csrf(request)
+    error = request.query_params.get("error", "")
+
+    return admin.templates.TemplateResponse(
+        request,
+        "onboarding.html",
+        {
+            "secrets_raw": secrets_raw,
+            "secrets_masked": secrets_masked,
+            "notify_catalog": notify_catalog,
+            "versions_catalog": versions_catalog,
+            "csrf_token": csrf_token,
+            "error": error,
+        },
+    )
+
+
+@router.post("/onboarding/save")
+async def onboarding_save(
+    request: Request,
+    csrf_token: Annotated[str, Form()] = "",
+    session: AsyncSession = Depends(get_session),
+):
+    """Сохраняет параметры сервиса (секреты) из формы onboarding."""
+    admin = _admin()
+    user = getattr(request.state, "current_user", None)
+    if not user or getattr(user, "role", "") != "admin":
+        raise HTTPException(403, "Только admin")
+
+    admin._verify_csrf(request, csrf_token)
+
+    form = await request.form()
+
+    for secret_name in _SECRET_NAMES:
+        raw = form.get(f"secret_{secret_name}", "")
+        if not raw:
+            continue
+        # Проверяем, не маскированное ли это значение (содержит •)
+        if "•" in raw:
+            continue
+        existing = await session.execute(
+            select(AppSecret).where(AppSecret.name == secret_name)
+        )
+        row = existing.scalar_one_or_none()
+        enc = encrypt_secret(raw, load_master_key())
+        if row:
+            row.ciphertext = enc.ciphertext
+            row.nonce = enc.nonce
+        else:
+            session.add(AppSecret(name=secret_name, ciphertext=enc.ciphertext, nonce=enc.nonce))
+
+    await session.commit()
+    return RedirectResponse("/onboarding", status_code=303)
