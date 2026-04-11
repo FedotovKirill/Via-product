@@ -45,6 +45,7 @@ USER_CFG_FOR_SEND = {
 # ═══════════════════════════════════════════════════════════════════════════
 # Дублируют часть контракта src/utils.py, но тестируют функции из bot.py.
 
+
 class TestPluralDays:
     """Тесты склонения слова 'день'."""
 
@@ -135,7 +136,12 @@ class TestCfgForRoom:
             "room": "!p:server",
             "notify": ["all"],
             "group_room": "!g:server",
-            "group_delivery": {"notify": ["new"], "work_hours": None, "work_days": None, "dnd": True},
+            "group_delivery": {
+                "notify": ["new"],
+                "work_hours": None,
+                "work_days": None,
+                "dnd": True,
+            },
         }
         out = bot._cfg_for_room(cfg, "!p:server")
         assert out is cfg
@@ -199,6 +205,7 @@ class TestGetVersionName:
 # ═══════════════════════════════════════════════════════════════════════════
 # USERS из .env должен быть валидным до выхода в прод.
 
+
 class TestValidateUsers:
     """Тесты validate_users — защита от кривого конфига."""
 
@@ -260,6 +267,7 @@ class TestValidateUsers:
 # 4. ДЕТЕКТОРЫ ИЗМЕНЕНИЙ
 # ═══════════════════════════════════════════════════════════════════════════
 # Сравнение прошлого state с текущим ответом Redmine.
+
 
 class TestDetectStatusChange:
     """Тесты определения смены статуса."""
@@ -340,6 +348,7 @@ class TestDetectNewJournals:
 # ═══════════════════════════════════════════════════════════════════════════
 # Человекочитаемое описание записей журнала для issue_updated.
 
+
 class TestDescribeJournal:
     """Тесты описания записей журнала."""
 
@@ -350,9 +359,9 @@ class TestDescribeJournal:
         assert "Клиент" in result
 
     def test_status_change(self):
-        j = MockJournal(2, notes="", details=[
-            {"name": "status_id", "old_value": "1", "new_value": "2"}
-        ])
+        j = MockJournal(
+            2, notes="", details=[{"name": "status_id", "old_value": "1", "new_value": "2"}]
+        )
         result = bot.describe_journal(j)
         assert "Статус" in result
         assert "Новая" in result
@@ -360,49 +369,55 @@ class TestDescribeJournal:
 
     def test_status_change_skipped(self):
         """skip_status=True → смена статуса не показывается."""
-        j = MockJournal(3, notes="", details=[
-            {"name": "status_id", "old_value": "1", "new_value": "2"}
-        ])
+        j = MockJournal(
+            3, notes="", details=[{"name": "status_id", "old_value": "1", "new_value": "2"}]
+        )
         result = bot.describe_journal(j, skip_status=True)
         assert result is None  # Нет ни комментария, ни показанных полей
 
     def test_priority_change(self):
-        j = MockJournal(4, notes="", details=[
-            {"name": "priority_id", "old_value": "2", "new_value": "3"}
-        ])
+        j = MockJournal(
+            4, notes="", details=[{"name": "priority_id", "old_value": "2", "new_value": "3"}]
+        )
         result = bot.describe_journal(j)
         assert "Приоритет" in result
 
     def test_comment_plus_status(self):
         """Комментарий + смена статуса → оба показываются."""
-        j = MockJournal(5, notes="Исправлено", details=[
-            {"name": "status_id", "old_value": "2", "new_value": "5"}
-        ])
+        j = MockJournal(
+            5,
+            notes="Исправлено",
+            details=[{"name": "status_id", "old_value": "2", "new_value": "5"}],
+        )
         result = bot.describe_journal(j)
         assert "💬" in result
         assert "Статус" in result
 
     def test_hidden_custom_field(self):
         """Кастомные поля (числовой id) скрываются."""
-        j = MockJournal(6, notes="", details=[
-            {"name": "42", "old_value": "old", "new_value": "new"}
-        ])
+        j = MockJournal(
+            6, notes="", details=[{"name": "42", "old_value": "old", "new_value": "new"}]
+        )
         result = bot.describe_journal(j)
         assert result is None
 
     def test_unknown_field_skipped(self):
         """Неизвестное поле (не в FIELD_NAMES) → пропускается."""
-        j = MockJournal(7, notes="", details=[
-            {"name": "some_unknown_field", "old_value": "a", "new_value": "b"}
-        ])
+        j = MockJournal(
+            7,
+            notes="",
+            details=[{"name": "some_unknown_field", "old_value": "a", "new_value": "b"}],
+        )
         result = bot.describe_journal(j)
         assert result is None
 
     def test_description_field_hidden(self):
         """Поле description → None в FIELD_NAMES → скрыто."""
-        j = MockJournal(8, notes="", details=[
-            {"name": "description", "old_value": "old text", "new_value": "new text"}
-        ])
+        j = MockJournal(
+            8,
+            notes="",
+            details=[{"name": "description", "old_value": "old text", "new_value": "new text"}],
+        )
         result = bot.describe_journal(j)
         assert result is None
 
@@ -413,9 +428,9 @@ class TestDescribeJournal:
         assert result is None
 
     def test_assigned_to_change(self):
-        j = MockJournal(10, notes="", details=[
-            {"name": "assigned_to_id", "old_value": "10", "new_value": "20"}
-        ])
+        j = MockJournal(
+            10, notes="", details=[{"name": "assigned_to_id", "old_value": "10", "new_value": "20"}]
+        )
         result = bot.describe_journal(j)
         assert "Назначена" in result
 
@@ -424,6 +439,7 @@ class TestDescribeJournal:
 # 6. RESOLVE_FIELD_VALUE
 # ═══════════════════════════════════════════════════════════════════════════
 # ID статуса/приоритета → русские подписи из справочников в bot.py.
+
 
 class TestResolveFieldValue:
     """Тесты перевода ID в человекочитаемые имена."""
@@ -455,6 +471,7 @@ class TestResolveFieldValue:
 # ═══════════════════════════════════════════════════════════════════════════
 # Дополнительные Matrix-комнаты по версии задачи и статусу РВ.
 
+
 class TestRouting:
     """Тесты маршрутизации уведомлений в доп. комнаты."""
 
@@ -466,10 +483,13 @@ class TestRouting:
 
     def test_new_issue_virt_goes_to_virt(self, issue_with_version):
         """Задача с версией Виртуализация → комната Виртуализации."""
-        with patch.dict(bot.VERSION_ROOM_MAP, {
-            "РЕД Виртуализация": "!virt:server",
-            "РЕД ОС": "!redos:server",
-        }):
+        with patch.dict(
+            bot.VERSION_ROOM_MAP,
+            {
+                "РЕД Виртуализация": "!virt:server",
+                "РЕД ОС": "!redos:server",
+            },
+        ):
             rooms = bot.get_extra_rooms_for_new(issue_with_version, {})
             assert "!virt:server" in rooms
             assert "!redos:server" not in rooms
@@ -502,6 +522,7 @@ class TestRouting:
 # 8. ОТПРАВКА MATRIX-СООБЩЕНИЙ
 # ═══════════════════════════════════════════════════════════════════════════
 # matrix_send.room_send_with_retry + HTML карточки задач.
+
 
 class TestRoomSendWithRetry:
     """Повторы отправки в Matrix (room_send_with_retry)."""
@@ -570,19 +591,17 @@ class TestSendMatrixMessage:
     @pytest.mark.asyncio
     async def test_successful_send(self, mock_matrix_client, simple_issue):
         """Успешная отправка — без исключений."""
-        await bot.send_matrix_message(
-            mock_matrix_client, simple_issue, "!room:server", "new"
-        )
+        await bot.send_matrix_message(mock_matrix_client, simple_issue, "!room:server", "new")
         mock_matrix_client.room_send.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_html_contains_issue_id(self, mock_matrix_client, simple_issue):
         """HTML содержит ID задачи и ссылку."""
-        await bot.send_matrix_message(
-            mock_matrix_client, simple_issue, "!room:server", "new"
-        )
+        await bot.send_matrix_message(mock_matrix_client, simple_issue, "!room:server", "new")
         call_args = mock_matrix_client.room_send.call_args
-        content = call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        content = (
+            call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        )
         html = content["formatted_body"]
         assert "#7777" in html
         # Ссылка может быть относительной (/issues/7777) или абсолютной (redmine.test/issues/7777)
@@ -591,32 +610,37 @@ class TestSendMatrixMessage:
     @pytest.mark.asyncio
     async def test_html_contains_status(self, mock_matrix_client, simple_issue):
         """HTML содержит текущий статус."""
-        await bot.send_matrix_message(
-            mock_matrix_client, simple_issue, "!room:server", "new"
-        )
+        await bot.send_matrix_message(mock_matrix_client, simple_issue, "!room:server", "new")
         call_args = mock_matrix_client.room_send.call_args
-        content = call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        content = (
+            call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        )
         assert "Новая" in content["formatted_body"]
 
     @pytest.mark.asyncio
     async def test_overdue_shows_days(self, mock_matrix_client, overdue_issue):
         """Для просроченных — показывает количество дней."""
-        await bot.send_matrix_message(
-            mock_matrix_client, overdue_issue, "!room:server", "overdue"
-        )
+        await bot.send_matrix_message(mock_matrix_client, overdue_issue, "!room:server", "overdue")
         call_args = mock_matrix_client.room_send.call_args
-        content = call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        content = (
+            call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        )
         assert "просрочено" in content["formatted_body"]
 
     @pytest.mark.asyncio
     async def test_extra_text_included(self, mock_matrix_client, simple_issue):
         """Дополнительный текст попадает в HTML."""
         await bot.send_matrix_message(
-            mock_matrix_client, simple_issue, "!room:server", "status_change",
-            extra_text="Статус: <strong>Новая</strong> → <strong>В работе</strong>"
+            mock_matrix_client,
+            simple_issue,
+            "!room:server",
+            "status_change",
+            extra_text="Статус: <strong>Новая</strong> → <strong>В работе</strong>",
         )
         call_args = mock_matrix_client.room_send.call_args
-        content = call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        content = (
+            call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        )
         assert "В работе" in content["formatted_body"]
 
     @pytest.mark.asyncio
@@ -625,7 +649,9 @@ class TestSendMatrixMessage:
         issue = MockIssue(issue_id=4242, subject='Сервер <prod> & "тест"')
         await bot.send_matrix_message(mock_matrix_client, issue, "!room:server", "new")
         call_args = mock_matrix_client.room_send.call_args
-        content = call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        content = (
+            call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        )
         body = content["formatted_body"]
         assert "<prod>" not in body
         assert "&lt;prod&gt;" in body
@@ -634,11 +660,11 @@ class TestSendMatrixMessage:
     @pytest.mark.asyncio
     async def test_version_shown_when_present(self, mock_matrix_client, issue_with_version):
         """Версия отображается в сообщении, если есть."""
-        await bot.send_matrix_message(
-            mock_matrix_client, issue_with_version, "!room:server", "new"
-        )
+        await bot.send_matrix_message(mock_matrix_client, issue_with_version, "!room:server", "new")
         call_args = mock_matrix_client.room_send.call_args
-        content = call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        content = (
+            call_args[1]["content"] if "content" in call_args[1] else call_args.kwargs["content"]
+        )
         assert "РЕД Виртуализация 1.0" in content["formatted_body"]
 
     @pytest.mark.asyncio
@@ -656,9 +682,7 @@ class TestSendMatrixMessage:
 
         with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(RuntimeError, match="Matrix room_send error"):
-                await bot.send_matrix_message(
-                    client, simple_issue, "xroom:server", "new"
-                )
+                await bot.send_matrix_message(client, simple_issue, "xroom:server", "new")
 
         assert client.room_send.call_count == matrix_send.MAX_RETRIES
 
@@ -679,7 +703,9 @@ class TestSendSafe:
     @pytest.mark.asyncio
     async def test_send_safe_success(self, mock_matrix_client, simple_issue):
         """send_safe при успехе — просто работает."""
-        await bot.send_safe(mock_matrix_client, simple_issue, USER_CFG_FOR_SEND, "!room:server", "new")
+        await bot.send_safe(
+            mock_matrix_client, simple_issue, USER_CFG_FOR_SEND, "!room:server", "new"
+        )
         mock_matrix_client.room_send.assert_called_once()
 
     @pytest.mark.asyncio
@@ -695,13 +721,22 @@ class TestSendSafe:
 # ═══════════════════════════════════════════════════════════════════════════
 # Регрессия: новый тип уведомления не забыт в словаре.
 
+
 class TestNotificationTypes:
     """Проверяем что все типы уведомлений корректно определены."""
 
-    @pytest.mark.parametrize("ntype", [
-        "new", "info", "reminder", "overdue",
-        "status_change", "issue_updated", "reopened",
-    ])
+    @pytest.mark.parametrize(
+        "ntype",
+        [
+            "new",
+            "info",
+            "reminder",
+            "overdue",
+            "status_change",
+            "issue_updated",
+            "reopened",
+        ],
+    )
     def test_all_types_have_emoji_and_title(self, ntype):
         assert ntype in bot.NOTIFICATION_TYPES
         emoji, title = bot.NOTIFICATION_TYPES[ntype]
@@ -713,6 +748,7 @@ class TestNotificationTypes:
 # 10. СТРЕСС-ТЕСТЫ / ГРАНИЧНЫЕ СЛУЧАИ
 # ═══════════════════════════════════════════════════════════════════════════
 # Много журналов, битые поля, глубокий JSON в save_json.
+
 
 class TestEdgeCases:
     """Тесты граничных случаев, которые могут сломать бота."""
@@ -777,9 +813,13 @@ class TestEdgeCases:
 
     def test_describe_journal_detail_missing_keys(self):
         """detail без name/property → не падает."""
-        j = MockJournal(800, notes="", details=[
-            {"old_value": "x", "new_value": "y"}  # нет name!
-        ])
+        j = MockJournal(
+            800,
+            notes="",
+            details=[
+                {"old_value": "x", "new_value": "y"}  # нет name!
+            ],
+        )
         result = bot.describe_journal(j)
         # "?" не в FIELD_NAMES → пропускается → None
         assert result is None
@@ -790,10 +830,12 @@ class TestEdgeCases:
         assert bot.plural_days(1001) == "1001 день"
         assert bot.plural_days(1002) == "1002 дня"
 
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 11. OVERDUE FIX-2: СРАВНЕНИЕ ПО ДАТЕ
 # ═══════════════════════════════════════════════════════════════════════════
 # Ежедневное напоминание о просрочке — по календарной дате, не по 24 ч.
+
 
 class TestOverdueDateComparison:
     """
@@ -836,5 +878,3 @@ class TestOverdueDateComparison:
         """Ни разу не уведомляли → уведомляем."""
         last_n = None
         assert not last_n  # Условие `not last_n` → True → отправляем
-
-

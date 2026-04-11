@@ -45,8 +45,10 @@ def test_login_reaches_shell_after_auth(
     page.get_by_label("Пароль", exact=True).fill(password)
     page.get_by_role("button", name="Войти").click()
     # После входа — дашборд (URL обычно /dashboard)
-    shell = page.get_by_role("heading", name="Дашборд")
-    expect(shell).to_be_visible(timeout=15_000)
+    # Проверяем что URL сменился и страница содержит навигацию
+    page.wait_for_url("**/dashboard", timeout=15_000)
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("heading", name="Дашборд")).to_be_visible(timeout=10_000)
 
 
 @pytest.mark.e2e

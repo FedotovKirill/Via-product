@@ -24,6 +24,7 @@ def _dt(hour, minute=0, weekday=0):
     """Создаёт datetime с нужным часом и днём недели (0=Пн)."""
     # 2025-07-07 — понедельник
     from datetime import timedelta
+
     base = datetime(2025, 7, 7, hour, minute, tzinfo=BOT_TZ)  # Пн
     return base + timedelta(days=weekday)
 
@@ -32,8 +33,8 @@ def _dt(hour, minute=0, weekday=0):
 # get_work_hours
 # ═══════════════════════════════════════════════════════════════
 
-class TestGetWorkHours:
 
+class TestGetWorkHours:
     def test_default(self):
         s, e = get_work_hours({})
         assert s == DEFAULT_WORK_START
@@ -62,8 +63,8 @@ class TestGetWorkHours:
 # get_work_days
 # ═══════════════════════════════════════════════════════════════
 
-class TestGetWorkDays:
 
+class TestGetWorkDays:
     def test_default(self):
         assert get_work_days({}) == DEFAULT_WORK_DAYS
 
@@ -81,8 +82,8 @@ class TestGetWorkDays:
 # is_working_time
 # ═══════════════════════════════════════════════════════════════
 
-class TestIsWorkingTime:
 
+class TestIsWorkingTime:
     def test_midday_weekday(self):
         dt = _dt(12, 0, weekday=0)  # Пн 12:00
         assert is_working_time({}, dt) is True
@@ -121,8 +122,8 @@ class TestIsWorkingTime:
 # is_dnd
 # ═══════════════════════════════════════════════════════════════
 
-class TestIsDnd:
 
+class TestIsDnd:
     def test_dnd_true(self):
         assert is_dnd({"dnd": True}) is True
 
@@ -140,8 +141,8 @@ class TestIsDnd:
 # can_notify
 # ═══════════════════════════════════════════════════════════════
 
-class TestCanNotify:
 
+class TestCanNotify:
     def test_emergency_bypasses_dnd(self):
         assert can_notify({"dnd": True}, PRIORITY_EMERGENCY) is True
 

@@ -15,8 +15,8 @@ mock_nio = MagicMock()
 mock_nio.RoomSendError = type("RoomSendError", (), {})
 sys.modules["nio"] = mock_nio
 
-import matrix_client as mc
-from matrix_client import MAX_RETRIES, close_client, get_client, send_message
+import matrix_client as mc  # noqa: E402
+from matrix_client import MAX_RETRIES, close_client, get_client, send_message  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -31,8 +31,8 @@ def reset_client():
 # get_client
 # ═══════════════════════════════════════════════════════════════
 
-class TestGetClient:
 
+class TestGetClient:
     @pytest.mark.asyncio
     async def test_creates_client(self):
         client = await get_client()
@@ -50,8 +50,8 @@ class TestGetClient:
 # close_client
 # ═══════════════════════════════════════════════════════════════
 
-class TestCloseClient:
 
+class TestCloseClient:
     @pytest.mark.asyncio
     async def test_close(self):
         mock_client = AsyncMock()
@@ -70,8 +70,8 @@ class TestCloseClient:
 # send_message
 # ═══════════════════════════════════════════════════════════════
 
-class TestSendMessage:
 
+class TestSendMessage:
     @pytest.mark.asyncio
     async def test_success(self):
         mock_client = AsyncMock()
@@ -110,9 +110,7 @@ class TestSendMessage:
     @pytest.mark.asyncio
     async def test_retry_on_exception(self):
         mock_client = AsyncMock()
-        mock_client.room_send = AsyncMock(
-            side_effect=[Exception("fail"), Exception("fail"), "ok"]
-        )
+        mock_client.room_send = AsyncMock(side_effect=[Exception("fail"), Exception("fail"), "ok"])
         mc._client = mock_client
 
         with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):
@@ -139,9 +137,7 @@ class TestSendMessage:
         error_resp.message = "temporary"
         error_resp.status_code = 429
         mock_client = AsyncMock()
-        mock_client.room_send = AsyncMock(
-            side_effect=[error_resp, "ok"]
-        )
+        mock_client.room_send = AsyncMock(side_effect=[error_resp, "ok"])
         mc._client = mock_client
 
         with patch("matrix_send.asyncio.sleep", new_callable=AsyncMock):

@@ -90,3 +90,12 @@ async def get_session():
         except Exception:
             await session.rollback()
             raise
+        finally:
+            # После любого commit инвалидируем кеш _has_admin —
+            # это гарантирует что middleware увидит нового админа.
+            try:
+                from admin.helpers import _admin_exists_cache
+
+                _admin_exists_cache.clear()
+            except Exception:
+                pass

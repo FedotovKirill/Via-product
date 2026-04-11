@@ -212,4 +212,3 @@ async def test_concurrent_lease_one_winner():
 
     a, b = await asyncio.gather(worker(owner1), worker(owner2))
     assert (a is True and b is False) or (a is False and b is True)
-

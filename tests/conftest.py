@@ -21,14 +21,17 @@ os.environ["LOG_TO_FILE"] = "0"
 
 # ── Вспомогательные классы ──────────────────────────────────────────────
 
+
 class _Named:
     """Объект с атрибутом .name (для status, priority, fixed_version)."""
+
     def __init__(self, name: str) -> None:
         self.name = name
 
 
 class MockIssue:
     """Мок Redmine-задачи."""
+
     def __init__(
         self,
         issue_id: int = 12345,
@@ -50,6 +53,7 @@ class MockIssue:
 
 class MockJournal:
     """Мок записи журнала Redmine."""
+
     def __init__(
         self,
         journal_id: int = 1,
@@ -64,6 +68,7 @@ class MockJournal:
 
 
 # ── Фикстуры ────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def simple_issue() -> MockIssue:

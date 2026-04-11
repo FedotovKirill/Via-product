@@ -17,4 +17,3 @@ def test_password_policy_rejects_login_substring():
     bad, reason = validate_password_policy("prefix_myuser_suffix99", login="myuser")
     assert not bad
     assert reason and "логин" in reason
-

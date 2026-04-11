@@ -45,10 +45,7 @@ def test_reformat_dmy_unchanged(monkeypatch):
 def test_format_events_log_reverses_and_formats(monkeypatch):
     monkeypatch.setenv("BOT_TIMEZONE", "Europe/Moscow")
     monkeypatch.setenv("ADMIN_EVENTS_LOG_PARSE_AS_UTC", "1")
-    raw = (
-        "2026-04-02 06:00:00,1 a\n"
-        "2026-04-02 07:00:00,2 b"
-    )
+    raw = "2026-04-02 06:00:00,1 a\n2026-04-02 07:00:00,2 b"
     text = format_events_log_for_ui(raw)
     lines = text.splitlines()
     assert len(lines) == 2
@@ -97,8 +94,12 @@ def test_filter_parsed_lines_by_local_date(monkeypatch):
     raw = "2026-04-02 06:00:00 [INFO] x\n"
     lines = parse_events_log_for_table(raw)
     tz = ZoneInfo("Europe/Moscow")
-    assert len(filter_parsed_lines_by_local_date(lines, date(2026, 4, 2), date(2026, 4, 2), tz)) == 1
-    assert len(filter_parsed_lines_by_local_date(lines, date(2026, 4, 3), date(2026, 4, 3), tz)) == 0
+    assert (
+        len(filter_parsed_lines_by_local_date(lines, date(2026, 4, 2), date(2026, 4, 2), tz)) == 1
+    )
+    assert (
+        len(filter_parsed_lines_by_local_date(lines, date(2026, 4, 3), date(2026, 4, 3), tz)) == 0
+    )
 
 
 def test_events_log_to_csv_bytes_has_bom_and_header(monkeypatch):

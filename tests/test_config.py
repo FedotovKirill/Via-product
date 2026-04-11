@@ -11,6 +11,7 @@ from config import should_notify, validate_users
 # validate_users
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestValidateUsers:
     """Валидация структуры USERS."""
 
@@ -20,11 +21,15 @@ class TestValidateUsers:
         assert errs == []
 
     def test_valid_full(self):
-        ok, errs = validate_users([{
-            "redmine_id": 1972,
-            "room": "!abc:server",
-            "notify": ["all"],
-        }])
+        ok, errs = validate_users(
+            [
+                {
+                    "redmine_id": 1972,
+                    "room": "!abc:server",
+                    "notify": ["all"],
+                }
+            ]
+        )
         assert ok is True
 
     def test_missing_redmine_id(self):
@@ -51,11 +56,15 @@ class TestValidateUsers:
         assert ok is False
 
     def test_notify_not_list(self):
-        ok, errs = validate_users([{
-            "redmine_id": 1,
-            "room": "!abc:server",
-            "notify": "all",
-        }])
+        ok, errs = validate_users(
+            [
+                {
+                    "redmine_id": 1,
+                    "room": "!abc:server",
+                    "notify": "all",
+                }
+            ]
+        )
         assert ok is False
         assert any("списком" in e for e in errs)
 
@@ -78,6 +87,7 @@ class TestValidateUsers:
 # ═══════════════════════════════════════════════════════════════
 # should_notify
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestShouldNotify:
     """Проверка подписки на тип уведомления."""
@@ -111,6 +121,7 @@ class TestShouldNotify:
 # ═══════════════════════════════════════════════════════════════
 # Логи: LOG_TO_FILE, LOG_PATH
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestLogPaths:
     def test_want_log_file_default(self, monkeypatch):

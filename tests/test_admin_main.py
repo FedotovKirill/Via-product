@@ -31,7 +31,9 @@ def test_audit_legacy_redirects_unauthenticated(client: TestClient):
     r = client.get("/audit", follow_redirects=False)
     assert r.status_code == 303
     # Неаутентифицированные пользователи редиректятся на /setup (первичная настройка)
-    assert "/setup" in (r.headers.get("location") or "") or "/login" in (r.headers.get("location") or "")
+    assert "/setup" in (r.headers.get("location") or "") or "/login" in (
+        r.headers.get("location") or ""
+    )
 
 
 def test_audit_legacy_redirects_to_events_for_admin(client: TestClient):
@@ -89,6 +91,7 @@ def test_forgot_password_redirects_to_login(client: TestClient):
 
 def test_admin_asset_version_helper(monkeypatch):
     from admin.helpers import _admin_asset_version
+
     monkeypatch.delenv("ADMIN_ASSET_VERSION", raising=False)
     assert _admin_asset_version() == "6"
     monkeypatch.setenv("ADMIN_ASSET_VERSION", "build-xyz")
@@ -194,7 +197,11 @@ def test_dash_service_strip_for_admin(client: TestClient, monkeypatch):
     monkeypatch.setattr(
         admin_main,
         "_runtime_status_from_file",
-        lambda: {"last_cycle_at": "2026-01-01T00:00:00Z", "last_cycle_duration_s": 1.2, "error_count": 0},
+        lambda: {
+            "last_cycle_at": "2026-01-01T00:00:00Z",
+            "last_cycle_duration_s": 1.2,
+            "error_count": 0,
+        },
     )
     r = client.get("/dash/service-strip")
     assert r.status_code == 200
@@ -219,7 +226,10 @@ def test_admin_csp_value_env(monkeypatch):
 def test_notify_presets_helpers():
     allowed = ["new", "issue_updated", "overdue"]
     assert admin_main._normalize_notify([]) == ["all"]
-    assert admin_main._normalize_notify(["new", "issue_updated"], allowed) == ["new", "issue_updated"]
+    assert admin_main._normalize_notify(["new", "issue_updated"], allowed) == [
+        "new",
+        "issue_updated",
+    ]
     assert admin_main._normalize_notify(["all", "new"]) == ["all"]
     assert admin_main._normalize_notify(["ghost"], allowed) == ["all"]
     assert admin_main._notify_preset(["all"]) == "all"
@@ -230,7 +240,10 @@ def test_notify_presets_helpers():
 
 def test_version_presets_helpers():
     assert admin_main._normalize_versions([], ["1.0"]) == []
-    assert admin_main._normalize_versions(["1.0", "1.0", "2.0", "x"], ["1.0", "2.0"]) == ["1.0", "2.0"]
+    assert admin_main._normalize_versions(["1.0", "1.0", "2.0", "x"], ["1.0", "2.0"]) == [
+        "1.0",
+        "2.0",
+    ]
     assert admin_main._normalize_versions(["1.0"], []) == []
     assert admin_main._version_preset([], ["1.0"]) == "all"
     assert admin_main._version_preset(["1.0"], ["1.0"]) == "custom"
@@ -253,7 +266,9 @@ def test_a_setup_creates_first_admin(client: TestClient):
         pytest.skip("Тест требует Postgres (DATABASE_URL)")
     page = client.get("/setup", follow_redirects=False)
     if page.status_code != 200:
-        pytest.skip("Форма /setup недоступна (админ уже создан — типично при повторном pytest на той же БД)")
+        pytest.skip(
+            "Форма /setup недоступна (админ уже создан — типично при повторном pytest на той же БД)"
+        )
     token = client.cookies.get("admin_csrf")
     r = client.post(
         "/setup",
@@ -276,7 +291,9 @@ def test_users_redirects_to_login_without_auth(client: TestClient):
     assert loc.endswith("/login") or loc.endswith("/setup"), loc
 
 
-def _setup_and_login_admin(client: TestClient, login: str = "test_admin@example.com", password: str = "StrongPassword123") -> None:
+def _setup_and_login_admin(
+    client: TestClient, login: str = "test_admin@example.com", password: str = "StrongPassword123"
+) -> None:
     client.get("/setup", follow_redirects=True)
     token = client.cookies.get("admin_csrf")
     created = client.post(
@@ -737,7 +754,9 @@ def test_user_and_group_version_routes_add_and_delete(client: TestClient):
         },
         follow_redirects=False,
     )
-    gid = int(parse_qs(urlparse(create_group.headers.get("location", "")).query)["highlight_group_id"][0])
+    gid = int(
+        parse_qs(urlparse(create_group.headers.get("location", "")).query)["highlight_group_id"][0]
+    )
 
     create_user = client.post(
         "/users",
@@ -752,7 +771,9 @@ def test_user_and_group_version_routes_add_and_delete(client: TestClient):
         },
         follow_redirects=False,
     )
-    uid = int(parse_qs(urlparse(create_user.headers.get("location", "")).query)["highlight_user_id"][0])
+    uid = int(
+        parse_qs(urlparse(create_user.headers.get("location", "")).query)["highlight_user_id"][0]
+    )
 
     user_key = f"v-user-{suffix}"
     group_key = f"v-group-{suffix}"
@@ -820,9 +841,8 @@ def test_ops_restart_accepts_and_redirects(client: TestClient, monkeypatch):
     _setup_and_login_admin(client)
 
     monkeypatch.setattr(admin_main, "_restart_in_background", lambda actor: None)
-    page = client.get("/")
+    client.get("/")
     token = client.cookies.get("admin_csrf")
     r = client.post("/ops/bot/restart", data={"csrf_token": token}, follow_redirects=False)
     assert r.status_code in (302, 303)
     assert r.headers.get("location") == "/dashboard?ops=restart_accepted"
-

@@ -75,4 +75,6 @@ def test_service_card_stopped_no_uptime():
     ],
 )
 def test_bot_status_labels(running, ds, label):
-    assert bot_status_label_ru({"running": running, "docker_status": ds, "state": "stopped"}) == label
+    assert (
+        bot_status_label_ru({"running": running, "docker_status": ds, "state": "stopped"}) == label
+    )

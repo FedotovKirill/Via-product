@@ -19,7 +19,6 @@ from admin.helpers import (
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     SETUP_PATH,
-    _admin_exists_cache,
     _append_ops_to_events_log,
     _client_ip,
     _ensure_csrf,
@@ -136,7 +135,6 @@ async def setup_post(
         session_version=1,
     )
     session.add(user)
-    _admin_exists_cache.clear()
     return RedirectResponse("/onboarding", status_code=303)
 
 
@@ -185,7 +183,9 @@ async def login_post(
         session_version=user.session_version,
     )
     session.add(st)
-    await session.flush()
+    await session.commit()  # Явный commit до редиректа — чтобы middleware нашёл сессию
+    # NOTE: get_session() dependency попытается сделать ещё один commit,
+    # но это будет no-op для уже закоммиченной транзакции.
     resp = RedirectResponse(DASHBOARD_PATH, status_code=303)
     resp.set_cookie(
         SESSION_COOKIE_NAME,
