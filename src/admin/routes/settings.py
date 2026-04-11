@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import secrets
 from pathlib import Path
@@ -18,6 +19,7 @@ from database.models import AppSecret
 from database.session import get_session
 from security import decrypt_secret, encrypt_secret, load_master_key
 
+logger = logging.getLogger("redmine_bot")
 router = APIRouter(tags=["settings"])
 
 _ENV_FILE_PATH = Path("/app/.env")
@@ -37,55 +39,104 @@ _UNMASKED_SECRETS = {"REDMINE_URL", "MATRIX_HOMESERVER", "MATRIX_USER_ID"}
 def _check_redmine_access(url: str, api_key: str) -> tuple[bool, str]:
     base = (url or "").strip().rstrip("/")
     key = (api_key or "").strip()
+    logger.info("=== REDMINE CHECK START ===")
+    logger.info("Base URL: %s", base)
+    logger.info("Key length: %d", len(key))
+    logger.info("Key first 10 chars: %s", repr(key[:10]) if key else "EMPTY")
+    
     if not base or not key:
         return False, "Redmine: укажите URL и API-ключ."
+    
+    target_url = f"{base}/users/current.json"
+    logger.info("Request URL: %s", target_url)
+    logger.info("Headers: X-Redmine-API-Key=%s, Accept=application/json", "SET" if key else "MISSING")
+    
     try:
         with httpx.Client(timeout=6.0) as client:
             resp = client.get(
-                f"{base}/users/current.json",
+                target_url,
                 headers={"X-Redmine-API-Key": key, "Accept": "application/json"},
             )
+            logger.info("Response status: %d", resp.status_code)
+            logger.info("Response body (first 200): %s", resp.text[:200])
+            
             if resp.status_code != 200:
                 return False, f"Redmine: HTTP {resp.status_code}."
+            
             data = resp.json()
+            logger.info("JSON data: %s", data)
+            
             user = data.get("user") if isinstance(data, dict) else {}
             login = str((user or {}).get("login") or "").strip()
             suffix = f" (user: {login})" if login else ""
             return True, f"Redmine: подключение успешно{suffix}."
-    except httpx.ConnectError:
-        return False, "Redmine: нет ответа (URL/сеть)."
-    except Exception:
-        return False, "Redmine: ошибка проверки."
+    except httpx.ConnectError as e:
+        logger.error("Redmine ConnectError: %s", e)
+        return False, f"Redmine: нет ответа (URL/сеть)."
+    except httpx.HTTPStatusError as e:
+        logger.error("Redmine HTTPStatusError: %s", e)
+        return False, f"Redmine: HTTP ошибка {e.response.status_code}."
+    except httpx.RequestError as e:
+        logger.error("Redmine RequestError: %s", e)
+        return False, f"Redmine: ошибка запроса ({type(e).__name__}: {e})."
+    except Exception as e:
+        logger.error("Redmine UNEXPECTED ERROR: %s", e, exc_info=True)
+        return False, f"Redmine: ошибка проверки ({type(e).__name__}: {e})."
 
 
 def _check_matrix_access(homeserver: str, user_id: str, token: str) -> tuple[bool, str]:
     hs = (homeserver or "").strip().rstrip("/")
     mxid = (user_id or "").strip()
     access_token = (token or "").strip()
+    logger.info("=== MATRIX CHECK START ===")
+    logger.info("Homeserver: %s", hs)
+    logger.info("User ID: %s", mxid)
+    logger.info("Token length: %d", len(access_token))
+    logger.info("Token first 10 chars: %s", repr(access_token[:10]) if access_token else "EMPTY")
+    
     if not hs or not mxid or not access_token:
         return False, "Matrix: укажите homeserver, user id и token."
+    
+    versions_url = f"{hs}/_matrix/client/versions"
+    logger.info("Versions URL: %s", versions_url)
+    
     try:
         with httpx.Client(timeout=6.0) as client:
             # 1. Проверка доступности сервера
-            resp = client.get(f"{hs}/_matrix/client/versions")
+            resp = client.get(versions_url)
+            logger.info("Versions status: %d", resp.status_code)
             if resp.status_code != 200:
                 return False, f"Matrix: HTTP {resp.status_code}."
+            
             # 2. Проверка токена
+            whoami_url = f"{hs}/_matrix/client/v3/account/whoami"
+            logger.info("Whoami URL: %s", whoami_url)
             who_resp = client.get(
-                f"{hs}/_matrix/client/v3/account/whoami",
+                whoami_url,
                 headers={"Authorization": f"Bearer {access_token}"},
             )
+            logger.info("Whoami status: %d", who_resp.status_code)
+            logger.info("Whoami body: %s", who_resp.text[:200])
+            
             if who_resp.status_code != 200:
                 return False, f"Matrix: токен недействителен (HTTP {who_resp.status_code})."
+            
             data = who_resp.json()
+            logger.info("Whoami JSON: %s", data)
+            
             got_user = data.get("user_id", "")
             if got_user and got_user != mxid:
                 return True, f"Matrix: подключение успешно, но token принадлежит {got_user}."
             return True, "Matrix: подключение успешно."
-    except httpx.ConnectError:
-        return False, "Matrix: нет ответа (URL/сеть)."
-    except Exception:
-        return False, "Matrix: ошибка проверки."
+    except httpx.ConnectError as e:
+        logger.error("Matrix ConnectError: %s", e)
+        return False, f"Matrix: нет ответа (URL/сеть)."
+    except httpx.RequestError as e:
+        logger.error("Matrix RequestError: %s", e)
+        return False, f"Matrix: ошибка запроса ({type(e).__name__}: {e})."
+    except Exception as e:
+        logger.error("Matrix UNEXPECTED ERROR: %s", e, exc_info=True)
+        return False, f"Matrix: ошибка проверки ({type(e).__name__}: {e})."
 
 
 def _mask_secret_value(name: str, value: str) -> str:
@@ -348,6 +399,13 @@ async def onboarding_check(
     csrf_token: Annotated[str, Form()] = "",
 ):
     """Проверяет доступность Redmine и Matrix."""
+    logger.info("=== ONBOARDING CHECK RECEIVED ===")
+    logger.info("REDCMINE_URL: %s", secret_REDMINE_URL)
+    logger.info("REDCMINE_API_KEY len: %d", len(secret_REDMINE_API_KEY))
+    logger.info("MATRIX_HOMESERVER: %s", secret_MATRIX_HOMESERVER)
+    logger.info("MATRIX_USER_ID: %s", secret_MATRIX_USER_ID)
+    logger.info("MATRIX_ACCESS_TOKEN len: %d", len(secret_MATRIX_ACCESS_TOKEN))
+    
     admin = _admin()
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -355,18 +413,26 @@ async def onboarding_check(
 
     admin._verify_csrf(request, csrf_token)
 
+    logger.info("Calling _check_redmine_access...")
     redmine_ok, redmine_msg = await asyncio.to_thread(
         _check_redmine_access,
         secret_REDMINE_URL,
         secret_REDMINE_API_KEY,
     )
+    logger.info("Redmine result: ok=%s, msg=%s", redmine_ok, redmine_msg)
+    
+    logger.info("Calling _check_matrix_access...")
     matrix_ok, matrix_msg = await asyncio.to_thread(
         _check_matrix_access,
         secret_MATRIX_HOMESERVER,
         secret_MATRIX_USER_ID,
         secret_MATRIX_ACCESS_TOKEN,
     )
+    logger.info("Matrix result: ok=%s, msg=%s", matrix_ok, matrix_msg)
+    
     ok = redmine_ok and matrix_ok
+    logger.info("Final check result: ok=%s", ok)
+    
     return JSONResponse(
         {
             "ok": ok,
