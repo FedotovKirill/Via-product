@@ -216,6 +216,7 @@ async def onboarding_page(request: Request, session: AsyncSession = Depends(get_
     notify_catalog, versions_catalog = await admin._load_catalogs(session)
     csrf_token, _ = admin._ensure_csrf(request)
     error = request.query_params.get("error", "")
+    db_config = _load_db_config_from_env()
 
     return admin.templates.TemplateResponse(
         request,
@@ -227,6 +228,7 @@ async def onboarding_page(request: Request, session: AsyncSession = Depends(get_
             "versions_catalog": versions_catalog,
             "csrf_token": csrf_token,
             "error": error,
+            "db_config": db_config,
         },
     )
 
