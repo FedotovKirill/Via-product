@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import admin.routes.settings as settings_mod
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # _mask_secret_value
@@ -21,13 +19,22 @@ class TestMaskSecretValue:
     """Маскировка секретов: URL и MXID не маскируются, ключи маскируются."""
 
     def test_unmasked_url(self):
-        assert settings_mod._mask_secret_value("REDMINE_URL", "https://red.example.com") == "https://red.example.com"
+        assert (
+            settings_mod._mask_secret_value("REDMINE_URL", "https://red.example.com")
+            == "https://red.example.com"
+        )
 
     def test_unmasked_homeserver(self):
-        assert settings_mod._mask_secret_value("MATRIX_HOMESERVER", "https://mx.example.com") == "https://mx.example.com"
+        assert (
+            settings_mod._mask_secret_value("MATRIX_HOMESERVER", "https://mx.example.com")
+            == "https://mx.example.com"
+        )
 
     def test_unmasked_mxid(self):
-        assert settings_mod._mask_secret_value("MATRIX_USER_ID", "@bot:example.com") == "@bot:example.com"
+        assert (
+            settings_mod._mask_secret_value("MATRIX_USER_ID", "@bot:example.com")
+            == "@bot:example.com"
+        )
 
     def test_masked_api_key_long(self):
         val = "abcdef1234567890abcdef1234567890"
@@ -78,53 +85,44 @@ class TestCheckRedmineAccess:
         assert not ok
         assert "недопустимые символы" in msg
 
-    @patch("admin.routes.settings.httpx.Client")
-    def test_success_with_user(self, mock_client_cls):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"user": {"login": "ivan"}}
-        mock_client = MagicMock()
-        mock_client.get.return_value = mock_resp
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-
+    def test_success_with_user(self, monkeypatch):
+        """Кэшированная проверка возвращает (True, None) при успехе."""
+        monkeypatch.setattr(
+            "admin.routes.settings.check_redmine_access_cached",
+            lambda url, key: (True, None),
+        )
         ok, msg = settings_mod._check_redmine_access("https://red.example.com", "key123")
         assert ok
         assert "успешно" in msg
-        assert "ivan" in msg
 
-    @patch("admin.routes.settings.httpx.Client")
-    def test_http_error(self, mock_client_cls):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 403
-        mock_client = MagicMock()
-        mock_client.get.return_value = mock_resp
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-
+    def test_http_error(self, monkeypatch):
+        """Кэшированная проверка возвращает ошибку HTTP."""
+        monkeypatch.setattr(
+            "admin.routes.settings.check_redmine_access_cached",
+            lambda url, key: (False, "Redmine: HTTP 403."),
+        )
         ok, msg = settings_mod._check_redmine_access("https://red.example.com", "key123")
         assert not ok
         assert "HTTP 403" in msg
 
-    @patch("admin.routes.settings.httpx.Client")
-    def test_connect_error(self, mock_client_cls):
-        import httpx
-        mock_client_cls.side_effect = httpx.ConnectError("fail")
+    def test_connect_error(self, monkeypatch):
+        """Кэшированная проверка возвращает сообщение об ошибке сети."""
+        monkeypatch.setattr(
+            "admin.routes.settings.check_redmine_access_cached",
+            lambda url, key: (False, "Redmine: нет ответа (URL/сеть)."),
+        )
         ok, msg = settings_mod._check_redmine_access("https://red.example.com", "key123")
         assert not ok
         assert "нет ответа" in msg
 
-    def test_strips_trailing_slash(self):
-        """URL с trailing slash должен нормализоваться."""
-        import httpx
-        with patch("admin.routes.settings.httpx.Client") as mock_cls:
-            mock_cls.side_effect = httpx.ConnectError("fail")
-            ok, msg = settings_mod._check_redmine_access("https://red.example.com/", "key")
-            assert not ok
-            # Убедимся что запрос шёл без слеша
-            call_args = mock_cls.call_args
-            # httpx.Client не принимает URL, он вызывается внутри функции
-            # Просто убедимся что не упало — нормализация работает
+    def test_strips_trailing_slash(self, monkeypatch):
+        """URL с trailing slash — кэшированная проверка."""
+        monkeypatch.setattr(
+            "admin.routes.settings.check_redmine_access_cached",
+            lambda url, key: (False, "Redmine: HTTP 404."),
+        )
+        ok, msg = settings_mod._check_redmine_access("https://red.example.com/", "key")
+        assert not ok
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -208,6 +206,7 @@ class TestCheckMatrixAccess:
     @patch("admin.routes.settings.httpx.Client")
     def test_connect_error(self, mock_client_cls):
         import httpx
+
         mock_client_cls.side_effect = httpx.ConnectError("fail")
         ok, msg = settings_mod._check_matrix_access("https://mx.example.com", "@bot:mx", "tok")
         assert not ok
@@ -286,7 +285,7 @@ class TestLoadDbConfigFromEnv:
             with patch.object(settings_mod, "_ENV_FILE_PATH", tmppath):
                 config = settings_mod._load_db_config_from_env()
             assert config["postgres_user"] == "bot"  # default
-            assert config["postgres_db"] == "via"    # default
+            assert config["postgres_db"] == "via"  # default
         finally:
             tmppath.unlink()
 
@@ -299,57 +298,31 @@ class TestLoadDbConfigFromEnv:
 class TestUpdateEnvFile:
     """Обновление переменных в .env файле."""
 
-    def test_update_existing(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
-            f.write("POSTGRES_PASSWORD=old\n")
-            f.write("OTHER=value\n")
-            f.flush()
-            tmppath = Path(f.name)
+    def test_update_existing(self, tmp_path):
+        env = tmp_path / ".env"
+        env.write_text("POSTGRES_PASSWORD=old\nOTHER=value\n")
+        settings_mod._update_env_file({"POSTGRES_PASSWORD": "new"}, env_path=env)
+        content = env.read_text()
+        assert "POSTGRES_PASSWORD=new" in content
+        assert "OTHER=value" in content
 
-        try:
-            with patch.object(settings_mod, "_ENV_FILE_PATH", tmppath):
-                settings_mod._update_env_file({"POSTGRES_PASSWORD": "new"})
-            content = tmppath.read_text()
-            assert "POSTGRES_PASSWORD=new" in content
-            assert "OTHER=value" in content
-        finally:
-            tmppath.unlink()
-
-    def test_add_new_key(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
-            f.write("EXISTING=yes\n")
-            f.flush()
-            tmppath = Path(f.name)
-
-        try:
-            with patch.object(settings_mod, "_ENV_FILE_PATH", tmppath):
-                settings_mod._update_env_file({"NEW_KEY": "newval"})
-            content = tmppath.read_text()
-            assert "EXISTING=yes" in content
-            assert "NEW_KEY=newval" in content
-        finally:
-            tmppath.unlink()
+    def test_add_new_key(self, tmp_path):
+        env = tmp_path / ".env"
+        env.write_text("EXISTING=yes\n")
+        settings_mod._update_env_file({"NEW_KEY": "newval"}, env_path=env)
+        content = env.read_text()
+        assert "EXISTING=yes" in content
+        assert "NEW_KEY=newval" in content
 
     def test_file_not_found(self):
-        with patch.object(settings_mod, "_ENV_FILE_PATH", Path("/nonexistent/.env")):
-            with pytest.raises(RuntimeError, match=".env file not found"):
-                settings_mod._update_env_file({"KEY": "val"})
+        with pytest.raises(RuntimeError, match="not found"):
+            settings_mod._update_env_file({"KEY": "val"}, env_path=Path("/nonexistent/.env"))
 
-    def test_preserves_comments_and_blank_lines(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
-            f.write("# Header comment\n")
-            f.write("\n")
-            f.write("POSTGRES_PASSWORD=old\n")
-            f.write("# Footer\n")
-            f.flush()
-            tmppath = Path(f.name)
-
-        try:
-            with patch.object(settings_mod, "_ENV_FILE_PATH", tmppath):
-                settings_mod._update_env_file({"POSTGRES_PASSWORD": "new"})
-            content = tmppath.read_text()
-            assert "# Header comment" in content
-            assert "# Footer" in content
-            assert "POSTGRES_PASSWORD=new" in content
-        finally:
-            tmppath.unlink()
+    def test_preserves_comments_and_blank_lines(self, tmp_path):
+        env = tmp_path / ".env"
+        env.write_text("# Header comment\n\nPOSTGRES_PASSWORD=old\n# Footer\n")
+        settings_mod._update_env_file({"POSTGRES_PASSWORD": "new"}, env_path=env)
+        content = env.read_text()
+        assert "# Header comment" in content
+        assert "# Footer" in content
+        assert "POSTGRES_PASSWORD=new" in content

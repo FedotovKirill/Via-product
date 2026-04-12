@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from collections.abc import Generator
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
@@ -12,7 +11,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 import admin.main as admin_main  # noqa: E402
-
 from tests.conftest import _setup_and_login_admin
 
 

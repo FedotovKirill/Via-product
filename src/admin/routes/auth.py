@@ -87,11 +87,20 @@ async def setup_post(
     session: AsyncSession = Depends(get_session),
 ):
     _verify_csrf(request, csrf_token)
+
+    # Rate limit setup endpoint (prevent abuse)
+    ip = _client_ip(request)
+    if not _rate_limiter.hit(f"setup:ip:{ip}", limit=3, window_seconds=300):
+        raise HTTPException(429, "Слишком много попыток, попробуйте позже")
+
     login_n = _normalize_login(login)
     fmt_ok, fmt_err = _login_format_ok(login_n)
     if not fmt_ok:
         return templates.TemplateResponse(
-            request, "auth/setup.html", {"error": fmt_err, "csrf_token": csrf_token}, status_code=400
+            request,
+            "auth/setup.html",
+            {"error": fmt_err, "csrf_token": csrf_token},
+            status_code=400,
         )
     if not _login_allowed(login_n):
         return templates.TemplateResponse(
@@ -148,9 +157,17 @@ async def login_post(
 ):
     _verify_csrf(request, csrf_token)
     ip = _client_ip(request)
-    if not _rate_limiter.hit(f"login:ip:{ip}", limit=5, window_seconds=60):
-        raise HTTPException(429, "Слишком много попыток, попробуйте позже")
     login_n = _normalize_login(login)
+
+    # Rate limit by IP (global)
+    if not _rate_limiter.hit(f"login:ip:{ip}", limit=10, window_seconds=60):
+        _append_ops_to_events_log(f"RATE_LIMIT login ip={ip}")
+        raise HTTPException(429, "Слишком много попыток, попробуйте позже")
+
+    # Rate limit by login name (per-account brute force protection)
+    if login_n and not _rate_limiter.hit(f"login:user:{login_n}", limit=5, window_seconds=300):
+        _append_ops_to_events_log(f"RATE_LIMIT login user={mask_identifier(login_n)} ip={ip}")
+        raise HTTPException(429, "Слишком много попыток для этого пользователя, попробуйте позже")
     if not login_n or not password:
         return templates.TemplateResponse(
             request,
@@ -214,7 +231,9 @@ async def forgot_password_post():
 async def reset_password_page(request: Request, token: str = ""):
     csrf_token, set_cookie = _ensure_csrf(request)
     resp = templates.TemplateResponse(
-        request, "auth/reset_password.html", {"error": None, "token": token, "csrf_token": csrf_token}
+        request,
+        "auth/reset_password.html",
+        {"error": None, "token": token, "csrf_token": csrf_token},
     )
     if set_cookie:
         resp.set_cookie(
@@ -232,6 +251,12 @@ async def reset_password_post(
     session: AsyncSession = Depends(get_session),
 ):
     _verify_csrf(request, csrf_token)
+
+    # Rate limit password reset (prevent abuse)
+    ip = _client_ip(request)
+    if not _rate_limiter.hit(f"reset:ip:{ip}", limit=5, window_seconds=300):
+        raise HTTPException(429, "Слишком много попыток, попробуйте позже")
+
     token = (token or "").strip()
     if not token or not password:
         return templates.TemplateResponse(

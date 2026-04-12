@@ -53,8 +53,56 @@ def _format_datetime_ui(dt) -> str:
 
 _jinja_env.filters["dt_ui"] = _format_datetime_ui
 
-# Экспортируем env для использования в main.py (для partials)
-__all__ = ["_jinja_env", "templates"]
+# Экспортируем всё для from admin.helpers import *
+__all__ = [
+    "ADMIN_PORT",
+    "AUTH_TOKEN_SALT",
+    "CATALOG_NOTIFY_SECRET",
+    "CATALOG_VERSIONS_SECRET",
+    "COOKIE_SECURE",
+    "CSRF_COOKIE_NAME",
+    "DASHBOARD_PATH",
+    "EXCLUDED_PATHS",
+    "GROUP_UNASSIGNED_DISPLAY",
+    "GROUP_UNASSIGNED_NAME",
+    "GROUP_USERS_FILTER_ALL_LABEL",
+    "LOGIN_PATH",
+    "RESET_COOLDOWN_SECONDS",
+    "RESET_TOKEN_TTL_SECONDS",
+    "SERVICE_TIMEZONE_FALLBACK",
+    "SERVICE_TIMEZONE_SECRET",
+    "SESSION_COOKIE_NAME",
+    "SESSION_TTL_SECONDS",
+    "SETUP_PATH",
+    "SHOW_DEV_TOKENS",
+    "_ALLOWED_LOGINS_RAW",
+    "_GENERIC_LOGIN_ERROR",
+    "_ROOT",
+    "_SimpleRateLimiter",
+    "_admin_asset_version",
+    "_admin_exists_cache",
+    "_append_audit_file_line",
+    "_append_ops_to_events_log",
+    "_client_ip",
+    "_ensure_csrf",
+    "_format_datetime_ui",
+    "_generic_login_error",
+    "_has_admin",
+    "_integration_status_cache",
+    "_jinja_env",
+    "_login_allowed",
+    "_login_format_ok",
+    "_mask_secret",
+    "_normalize_login",
+    "_now_utc",
+    "_parse_catalog_payload",
+    "_rate_limiter",
+    "_templates_dir",
+    "_verify_csrf",
+    "_verify_csrf_json",
+    "logger",
+    "templates",
+]
 
 # ── Config constants ────────────────────────────────────────────────────────
 
@@ -69,13 +117,18 @@ AUTH_TOKEN_SALT = os.getenv("AUTH_TOKEN_SALT", "dev-change-me-in-prod")
 SHOW_DEV_TOKENS = bool(int(os.getenv("SHOW_DEV_TOKENS", "0")))
 
 SERVICE_TIMEZONE_FALLBACK = "Europe/Moscow"
-SERVICE_TIMEZONE_SECRET = "BOT_TIMEZONE"
-CATALOG_NOTIFY_SECRET = "CATALOG_NOTIFY"
-CATALOG_VERSIONS_SECRET = "CATALOG_VERSIONS"
+SERVICE_TIMEZONE_SECRET = "__service_timezone"
+CATALOG_NOTIFY_SECRET = "__catalog_notify"
+CATALOG_VERSIONS_SECRET = "__catalog_versions"
 
 SETUP_PATH = "/setup"
 DASHBOARD_PATH = "/dashboard"
 LOGIN_PATH = "/login"
+
+# Группа "без группы"
+GROUP_UNASSIGNED_NAME = "UNASSIGNED"
+GROUP_UNASSIGNED_DISPLAY = "Без группы"
+GROUP_USERS_FILTER_ALL_LABEL = "Все группы"
 
 EXCLUDED_PATHS = {
     "/health",
@@ -174,6 +227,16 @@ def _verify_csrf(request: Request, token: str) -> None:
     cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
     if not token or token != cookie:
         raise HTTPException(403, "Неверный CSRF-токен")
+
+
+def _verify_csrf_json(request: Request) -> None:
+    """CSRF-проверка для JSON-endpoints (тестовое сообщение и т.п.)."""
+    from fastapi import HTTPException
+
+    token = request.headers.get("X-CSRF-Token", "").strip()
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not cookie_token or not token or token != cookie_token:
+        raise HTTPException(400, detail="Некорректный CSRF токен")
 
 
 # ── Client IP ────────────────────────────────────────────────────────────────

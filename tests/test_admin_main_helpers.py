@@ -5,7 +5,6 @@ from __future__ import annotations
 import admin.main as main
 import admin.routes.redmine as redmine_mod
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # _notify_preset
 # ═══════════════════════════════════════════════════════════════════════════
@@ -190,6 +189,7 @@ class TestRedmineSearchBreaker:
 
     def test_cooldown_duration_60s(self):
         import time
+
         breaker = redmine_mod._RedmineSearchBreaker()
         now = time.time()
         for _ in range(5):

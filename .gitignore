@@ -18,6 +18,12 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Test & lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 # IDE
 .idea/
 .vscode/

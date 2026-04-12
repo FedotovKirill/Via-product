@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from datetime import datetime
 from html import escape as html_escape
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_session
+from redmine_cache import fetch_redmine_user_by_id, search_redmine_users
 
 router = APIRouter(tags=["redmine"])
 
@@ -27,6 +26,8 @@ class _RedmineSearchBreaker:
         self.cooldown_until_ts = 0.0
 
     def blocked(self) -> bool:
+        from datetime import datetime
+
         return datetime.now().timestamp() < self.cooldown_until_ts
 
     def on_success(self) -> None:
@@ -36,6 +37,8 @@ class _RedmineSearchBreaker:
     def on_failure(self) -> None:
         self.failures += 1
         if self.failures >= 5:
+            from datetime import datetime
+
             self.cooldown_until_ts = datetime.now().timestamp() + 60
 
 
@@ -47,34 +50,6 @@ def _admin() -> object:
     import admin.main as _m
 
     return _m
-
-
-def _fetch_redmine_user_by_id(
-    redmine_user_id: int, redmine_url: str, redmine_key: str
-) -> tuple[dict | None, str | None]:
-    """GET /users/:id.json → (user dict, None) или (None, error_code)."""
-    if not redmine_url or not redmine_key:
-        return None, "not_configured"
-    from urllib.error import HTTPError, URLError
-    from urllib.request import Request, urlopen
-
-    url = f"{redmine_url.rstrip('/')}/users/{redmine_user_id}.json"
-    req = Request(url, headers={"X-Redmine-API-Key": redmine_key})
-    try:
-        with urlopen(req, timeout=5.0) as r:
-            payload = json.loads(r.read().decode("utf-8", errors="replace"))
-        u = payload.get("user") if isinstance(payload, dict) else None
-        if not isinstance(u, dict):
-            return None, "bad_response"
-        return u, None
-    except HTTPError as e:
-        if e.code == 404:
-            return None, "not_found"
-        return None, f"http_{e.code}"
-    except URLError:
-        return None, "timeout"
-    except Exception:
-        return None, "error"
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -113,32 +88,11 @@ async def redmine_users_search(
     if not redmine_url or not redmine_key:
         return HTMLResponse('<option value="">Redmine не настроен (нет URL/API key)</option>')
 
-    def _do_search() -> tuple[list[dict], str | None]:
-        from urllib.error import HTTPError, URLError
-        from urllib.parse import urlencode
-        from urllib.request import Request, urlopen
-
-        params = urlencode({"name": q, "limit": str(limit_i)})
-        url = f"{redmine_url.rstrip('/')}/users.json?{params}"
-        req = Request(url, headers={"X-Redmine-API-Key": redmine_key})
-        try:
-            with urlopen(req, timeout=5.0) as r:
-                payload = json.loads(r.read().decode("utf-8", errors="replace"))
-            items = payload.get("users") if isinstance(payload, dict) else []
-            return (items if isinstance(items, list) else [], None)
-        except HTTPError as e:
-            return [], f"http_{e.code}"
-        except URLError:
-            return [], "timeout"
-        except Exception:
-            return [], "error"
-
-    users_raw, err = await asyncio.to_thread(_do_search)
-    if err:
+    users = await asyncio.to_thread(search_redmine_users, q, redmine_url, redmine_key, limit_i)
+    if not users:
         _redmine_search_breaker.on_failure()
-        return HTMLResponse(f'<option value="">Ошибка поиска: {html_escape(err)}</option>')
+        return HTMLResponse('<option value="">Ничего не найдено</option>')
     _redmine_search_breaker.on_success()
-    users = users_raw
 
     opts: list[str] = []
     for u in users:
@@ -177,7 +131,7 @@ async def redmine_user_lookup(
     redmine_url = await admin._load_secret_plain(session, "REDMINE_URL")
     redmine_key = await admin._load_secret_plain(session, "REDMINE_API_KEY")
 
-    raw, err = await asyncio.to_thread(_fetch_redmine_user_by_id, user_id, redmine_url, redmine_key)
+    raw, err = await asyncio.to_thread(fetch_redmine_user_by_id, user_id, redmine_url, redmine_key)
     if err == "not_configured":
         return JSONResponse({"ok": False, "error": "not_configured"})
     if err == "not_found":

@@ -305,17 +305,11 @@ async def user_test_message(
 
         if not target_mxid and not room_id and redmine_url and redmine_key and row.redmine_id:
             try:
-                import json as _json3
-                from urllib.request import Request, urlopen
+                from redmine_cache import fetch_redmine_user_by_id
 
-                api_url = f"{redmine_url.rstrip('/')}/users/{row.redmine_id}.json"
-                req = Request(
-                    api_url,
-                    headers={"X-Redmine-API-Key": redmine_key, "Accept": "application/json"},
-                )
-                with urlopen(req, timeout=10) as resp:
-                    rdata = _json3.loads(resp.read().decode())
-                    login = rdata.get("user", {}).get("login", "")
+                rdata, err = fetch_redmine_user_by_id(row.redmine_id, redmine_url, redmine_key)
+                if rdata:
+                    login = rdata.get("login", "")
                     if login:
                         domain = bot_mxid.split(":", 1)[1] if ":" in bot_mxid else ""
                         target_mxid = f"@{login}:{domain}" if domain else None

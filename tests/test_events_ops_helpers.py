@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 import admin.routes.events as events_mod
 import admin.routes.ops as ops_mod
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # events._events_filter_query_dict

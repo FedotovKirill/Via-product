@@ -94,6 +94,9 @@
       status.textContent = "Проверка...";
       btn.disabled = true;
       var fd = new FormData(form);
+      // Добавляем CSRF токен
+      var csrf = form.querySelector('input[name="csrf_token"]');
+      fd.set("csrf_token", csrf ? csrf.value : "");
       fetch("/onboarding/check", {
         method: "POST",
         body: fd,

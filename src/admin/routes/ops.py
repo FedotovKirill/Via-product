@@ -15,6 +15,10 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from admin.api_schemas import (
+    OkResponse,
+    ServiceStatusResponse,
+)
 from admin.helpers import (
     DASHBOARD_PATH,
     _append_audit_file_line,
@@ -173,7 +177,7 @@ async def bot_ops_action(
     return RedirectResponse(DASHBOARD_PATH + "?" + urlencode(q), status_code=303)
 
 
-@router.post("/api/bot/heartbeat")
+@router.post("/api/bot/heartbeat", response_model=OkResponse)
 async def bot_heartbeat(session: AsyncSession = Depends(get_session)):
     from sqlalchemy import insert
 
@@ -184,13 +188,23 @@ async def bot_heartbeat(session: AsyncSession = Depends(get_session)):
     )
     await session.execute(stmt)
     await session.commit()
-    return {"ok": True}
+    return OkResponse(ok=True)
 
 
-@router.get("/api/bot/status")
+@router.get("/api/bot/status", response_model=ServiceStatusResponse)
 async def bot_status():
     try:
         status = get_service_status()
-        return {"ok": True, "status": status}
-    except DockerControlError as e:
-        return {"ok": False, "error": str(e)}
+        return ServiceStatusResponse(
+            ok=True,
+            status=status.get("status", "unknown"),
+            uptime=status.get("uptime"),
+            started_at=status.get("started_at"),
+            errors=status.get("errors", 0),
+        )
+    except DockerControlError:
+        return ServiceStatusResponse(
+            ok=False,
+            status="error",
+            errors=0,
+        )

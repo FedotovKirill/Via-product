@@ -15,8 +15,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from admin.env_manager import update_env_file_with_lock
 from database.models import AppSecret
 from database.session import get_session
+from redmine_cache import check_redmine_access as check_redmine_access_cached
 from security import decrypt_secret, encrypt_secret, load_master_key
 
 logger = logging.getLogger("redmine_bot")
@@ -37,44 +39,11 @@ _UNMASKED_SECRETS = {"REDMINE_URL", "MATRIX_HOMESERVER", "MATRIX_USER_ID"}
 
 
 def _check_redmine_access(url: str, api_key: str) -> tuple[bool, str]:
-    base = (url or "").strip().rstrip("/")
-    key = (api_key or "").strip()
-    logger.info("Redmine check: URL=%s, KeyLen=%d", base, len(key))
-    
-    if not base or not key:
-        return False, "Redmine: укажите URL и API-ключ."
-    
-    # Проверка на нелатинские символы ДО запроса
-    try:
-        key.encode("ascii")
-    except UnicodeEncodeError:
-        logger.error("Redmine key contains non-ASCII chars: %s", repr(key))
-        return False, f"Redmine: API-ключ содержит недопустимые символы (нужен только английский)."
-
-    target_url = f"{base}/users/current.json"
-    
-    try:
-        with httpx.Client(timeout=6.0) as client:
-            resp = client.get(
-                target_url,
-                headers={"X-Redmine-API-Key": key, "Accept": "application/json"},
-            )
-            logger.info("Redmine response status: %d", resp.status_code)
-            
-            if resp.status_code != 200:
-                return False, f"Redmine: HTTP {resp.status_code}."
-            
-            data = resp.json()
-            user = data.get("user") if isinstance(data, dict) else {}
-            login = str((user or {}).get("login") or "").strip()
-            suffix = f" (user: {login})" if login else ""
-            return True, f"Redmine: подключение успешно{suffix}."
-    except httpx.ConnectError as e:
-        logger.error("Redmine ConnectError: %s", e)
-        return False, f"Redmine: нет ответа (URL/сеть)."
-    except Exception as e:
-        logger.error("Redmine UNEXPECTED ERROR: %s", e, exc_info=True)
-        return False, f"Redmine: ошибка проверки ({type(e).__name__}: {e})."
+    """Обёртка над кэшированной проверкой Redmine."""
+    ok, err = check_redmine_access_cached(url, api_key)
+    if ok:
+        return True, "Redmine: подключение успешно."
+    return False, err or "Redmine: ошибка проверки."
 
 
 def _check_matrix_access(homeserver: str, user_id: str, token: str) -> tuple[bool, str]:
@@ -82,7 +51,7 @@ def _check_matrix_access(homeserver: str, user_id: str, token: str) -> tuple[boo
     mxid = (user_id or "").strip()
     access_token = (token or "").strip()
     logger.info("Matrix check: HS=%s, UID=%s, TokLen=%d", hs, mxid, len(access_token))
-    
+
     if not hs or not mxid or not access_token:
         return False, "Matrix: укажите homeserver, user id и token."
 
@@ -91,10 +60,10 @@ def _check_matrix_access(homeserver: str, user_id: str, token: str) -> tuple[boo
         access_token.encode("ascii")
     except UnicodeEncodeError:
         logger.error("Matrix token contains non-ASCII chars: %s", repr(access_token))
-        return False, f"Matrix: Токен содержит недопустимые символы (нужен только английский)."
-    
+        return False, "Matrix: Токен содержит недопустимые символы (нужен только английский)."
+
     versions_url = f"{hs}/_matrix/client/versions"
-    
+
     try:
         with httpx.Client(timeout=6.0) as client:
             # 1. Проверка доступности сервера
@@ -102,7 +71,7 @@ def _check_matrix_access(homeserver: str, user_id: str, token: str) -> tuple[boo
             logger.info("Matrix versions status: %d", resp.status_code)
             if resp.status_code != 200:
                 return False, f"Matrix: HTTP {resp.status_code}."
-            
+
             # 2. Проверка токена
             whoami_url = f"{hs}/_matrix/client/v3/account/whoami"
             who_resp = client.get(
@@ -110,10 +79,10 @@ def _check_matrix_access(homeserver: str, user_id: str, token: str) -> tuple[boo
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             logger.info("Matrix whoami status: %d", who_resp.status_code)
-            
+
             if who_resp.status_code != 200:
                 return False, f"Matrix: токен недействителен (HTTP {who_resp.status_code})."
-            
+
             data = who_resp.json()
             got_user = data.get("user_id", "")
             if got_user and got_user != mxid:
@@ -121,7 +90,7 @@ def _check_matrix_access(homeserver: str, user_id: str, token: str) -> tuple[boo
             return True, "Matrix: подключение успешно."
     except httpx.ConnectError as e:
         logger.error("Matrix ConnectError: %s", e)
-        return False, f"Matrix: нет ответа (URL/сеть)."
+        return False, "Matrix: нет ответа (URL/сеть)."
     except Exception as e:
         logger.error("Matrix UNEXPECTED ERROR: %s", e, exc_info=True)
         return False, f"Matrix: ошибка проверки ({type(e).__name__}: {e})."
@@ -161,30 +130,9 @@ def _load_db_config_from_env() -> dict[str, str]:
     }
 
 
-def _update_env_file(updates: dict[str, str]) -> None:
-    """Обновляет переменные в .env файле, сохраняя остальные."""
-    if not _ENV_FILE_PATH.exists():
-        raise RuntimeError(".env file not found")
-
-    lines = _ENV_FILE_PATH.read_text(encoding="utf-8").splitlines()
-    new_lines = []
-    updated_keys = set()
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in stripped:
-            key = stripped.split("=", 1)[0].strip()
-            if key in updates:
-                new_lines.append(f"{key}={updates[key]}")
-                updated_keys.add(key)
-                continue
-        new_lines.append(line)
-
-    for key, value in updates.items():
-        if key not in updated_keys:
-            new_lines.append(f"{key}={value}")
-
-    _ENV_FILE_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+def _update_env_file(updates: dict[str, str], env_path: Path | None = None) -> None:
+    """Обновляет переменные в .env файле с file-locking."""
+    update_env_file_with_lock(updates, env_path=env_path)
 
 
 def _admin() -> object:
@@ -318,7 +266,9 @@ async def onboarding_page(request: Request, session: AsyncSession = Depends(get_
     tz_all = admin._standard_timezone_options()
     tz_labels = admin._timezone_labels(tz_all)
     # Текущая таймзона сервиса (из секретов)
-    current_tz = secrets_raw.get("SERVICE_TIMEZONE", "") or os.getenv("BOT_TIMEZONE", "Europe/Moscow")
+    current_tz = secrets_raw.get("SERVICE_TIMEZONE", "") or os.getenv(
+        "BOT_TIMEZONE", "Europe/Moscow"
+    )
 
     return admin.templates.TemplateResponse(
         request,
@@ -361,9 +311,7 @@ async def onboarding_save(
         # Проверяем, не маскированное ли это значение (содержит •)
         if "•" in raw:
             continue
-        existing = await session.execute(
-            select(AppSecret).where(AppSecret.name == secret_name)
-        )
+        existing = await session.execute(select(AppSecret).where(AppSecret.name == secret_name))
         row = existing.scalar_one_or_none()
         enc = encrypt_secret(raw, load_master_key())
         if row:
@@ -422,7 +370,7 @@ async def onboarding_check(
 ):
     """Проверяет доступность Redmine и Matrix."""
     logger.info("=== ONBOARDING CHECK STARTED ===")
-    
+
     admin = _admin()
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -452,7 +400,11 @@ async def onboarding_check(
     matrix_uid = _resolve("MATRIX_USER_ID", secret_MATRIX_USER_ID)
     matrix_tok = _resolve("MATRIX_ACCESS_TOKEN", secret_MATRIX_ACCESS_TOKEN)
 
-    # 3. Проверяем
+    # 3. Проверяем (очищаем кэш для fresh check)
+    from redmine_cache import clear_redmine_caches
+
+    clear_redmine_caches()
+
     logger.info("Calling _check_redmine_access...")
     redmine_ok, redmine_msg = await asyncio.to_thread(
         _check_redmine_access,
@@ -460,7 +412,7 @@ async def onboarding_check(
         redmine_key,
     )
     logger.info("Redmine result: ok=%s, msg=%s", redmine_ok, redmine_msg)
-    
+
     logger.info("Calling _check_matrix_access...")
     matrix_ok, matrix_msg = await asyncio.to_thread(
         _check_matrix_access,
@@ -469,10 +421,10 @@ async def onboarding_check(
         matrix_tok,
     )
     logger.info("Matrix result: ok=%s, msg=%s", matrix_ok, matrix_msg)
-    
+
     ok = redmine_ok and matrix_ok
     logger.info("Final check result: ok=%s", ok)
-    
+
     return JSONResponse(
         {
             "ok": ok,

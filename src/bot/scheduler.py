@@ -1,0 +1,216 @@
+"""Планировщик: периодические задачи бота.
+
+check_all_users, daily_report, cleanup_state_files.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nio import AsyncClient
+    from redminelib import Redmine
+
+logger = logging.getLogger("redmine_bot")
+
+
+async def check_all_users(
+    client: AsyncClient,
+    redmine: Redmine,
+    *,
+    now_tz,
+    check_interval: int,
+    runtime_status_file: Path,
+    bot_instance_id,
+    bot_lease_ttl: int,
+    redmine_client_for_user,
+    check_user_issues_fn,
+    last_check_time: dict[int, datetime],
+) -> None:
+    """Проверка задач ВСЕХ пользователей. Вызывается по таймеру."""
+    from bot.config_state import USERS
+    from database.session import get_session_factory
+    from database.state_repo import try_acquire_user_lease
+
+    start = time.monotonic()
+    logger.info("🔍 Проверка в %s...", now_tz().strftime("%H:%M:%S"))
+
+    session_factory = get_session_factory()
+    lease_owner_id = bot_instance_id
+    lease_ttl = bot_lease_ttl
+    error_count = 0
+
+    async with session_factory() as session:
+        for user_cfg in USERS:
+            uid = user_cfg.get("redmine_id")
+            lease_until = datetime.now(UTC) + timedelta(seconds=lease_ttl)
+            try:
+                acquired = await try_acquire_user_lease(
+                    session,
+                    uid,
+                    lease_owner_id=lease_owner_id,
+                    lease_until=lease_until,
+                )
+                if not acquired:
+                    continue
+
+                await session.commit()
+                rm_user = redmine_client_for_user(redmine, user_cfg)
+                await check_user_issues_fn(client, rm_user, user_cfg, db_session=session)
+                await session.commit()
+                last_check_time[uid] = datetime.now(UTC)
+            except Exception as e:
+                logger.error("❌ DB-state цикл проверки user %s: %s", uid, e, exc_info=True)
+                error_count += 1
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+
+    elapsed = time.monotonic() - start
+    try:
+        runtime_status_file.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "last_cycle_at": now_tz().isoformat(),
+            "last_cycle_duration_s": round(elapsed, 3),
+            "error_count": int(error_count),
+        }
+        runtime_status_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        logger.debug("Не удалось обновить runtime_status.json", exc_info=True)
+
+    logger.info("✅ Проверка завершена за %.1fс", elapsed)
+    if elapsed > check_interval * 0.8:
+        logger.warning(
+            "⚠️ Цикл (%dс) > 0.8×интервала (%dс). Увеличьте CHECK_INTERVAL в .env или "
+            "сократите число пользователей/API на цикл.",
+            int(elapsed),
+            check_interval,
+        )
+
+
+async def daily_report(
+    client: AsyncClient,
+    redmine: Redmine,
+    *,
+    now_tz,
+    today_tz,
+    redmine_client_for_user,
+    redmine_url: str,
+) -> None:
+    """Утренний отчёт (09:00) — каждому пользователю с notify=all."""
+    from bot.config_state import USERS
+    from bot.logic import STATUS_INFO_PROVIDED, plural_days, should_notify
+    from matrix_send import room_send_with_retry
+    from preferences import can_notify
+    from utils import safe_html
+
+    logger.info("📊 Утренний отчёт...")
+
+    for user_cfg in USERS:
+        if not should_notify(user_cfg, "all"):
+            continue
+        if not can_notify(user_cfg, priority="", dt=now_tz()):
+            logger.debug(
+                "Утренний отчёт: пропуск (время/DND), user %s",
+                user_cfg.get("redmine_id"),
+            )
+            continue
+
+        uid = user_cfg["redmine_id"]
+        room = user_cfg["room"]
+        rm_user = redmine_client_for_user(redmine, user_cfg)
+
+        try:
+            issues = list(rm_user.issue.filter(assigned_to_id=uid, status_id="open"))
+        except Exception as e:
+            logger.error("❌ Redmine (%s, user %s): %s", "утренний отчёт", uid, e, exc_info=True)
+            continue
+
+        today = today_tz()
+        info_provided = [i for i in issues if i.status.name == STATUS_INFO_PROVIDED]
+        overdue = sorted(
+            [i for i in issues if i.due_date and i.due_date < today], key=lambda i: i.due_date
+        )
+
+        html = f"<h3>📅 Отчёт на {today.strftime('%d.%m.%Y')}</h3>"
+        html += f"<p><strong>Открытых задач:</strong> {len(issues)}</p>"
+        html += f"<p><strong>«{STATUS_INFO_PROVIDED}»:</strong> {len(info_provided)}</p>"
+
+        if info_provided:
+            html += "<ul>"
+            for i in info_provided[:10]:
+                html += (
+                    f'<li><a href="{redmine_url}/issues/{i.id}">#{i.id}</a> '
+                    f"— {safe_html(i.subject)}</li>"
+                )
+            html += "</ul>"
+            if len(info_provided) > 10:
+                html += f"<p><em>...и ещё {len(info_provided) - 10}</em></p>"
+
+        html += f"<p><strong>Просроченных:</strong> {len(overdue)}</p>"
+        if overdue:
+            html += "<ul>"
+            for i in overdue[:10]:
+                days = (today - i.due_date).days
+                html += (
+                    f'<li><a href="{redmine_url}/issues/{i.id}">#{i.id}</a> '
+                    f"— {safe_html(i.subject)} ({plural_days(days)})</li>"
+                )
+            html += "</ul>"
+
+        plain = (
+            f"Отчёт {today.strftime('%d.%m.%Y')}: {len(issues)} задач, {len(overdue)} просрочено"
+        )
+
+        try:
+            await room_send_with_retry(
+                client,
+                room,
+                {
+                    "msgtype": "m.text",
+                    "body": plain,
+                    "format": "org.matrix.custom.html",
+                    "formatted_body": html,
+                },
+            )
+            logger.info("📊 Отчёт user %s: %d задач", uid, len(issues))
+        except Exception as e:
+            logger.error("❌ Отправка отчёта user %s: %s", uid, e)
+
+
+async def cleanup_state_files(redmine: Redmine, *, now_tz, redmine_client_for_user) -> None:
+    """Очистка state в Postgres для закрытых задач (03:00)."""
+    from bot.config_state import USERS
+    from database.session import get_session_factory
+    from database.state_repo import delete_state_rows_not_in_open
+
+    logger.info("🧹 Очистка state в Postgres для закрытых задач (03:00)...")
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        for user_cfg in USERS:
+            uid = user_cfg["redmine_id"]
+            rm_user = redmine_client_for_user(redmine, user_cfg)
+            try:
+                open_issues = list(rm_user.issue.filter(assigned_to_id=uid, status_id="open"))
+            except Exception as e:
+                logger.error(
+                    "❌ Redmine (%s, user %s): %s", "очистка state (db)", uid, e, exc_info=True
+                )
+                continue
+
+            open_ids = {str(i.id) for i in open_issues}
+            try:
+                await delete_state_rows_not_in_open(session, uid, open_ids)
+            except Exception as e:
+                logger.error("❌ DB cleanup user %s: %s", uid, e, exc_info=True)
+
+        await session.commit()
+
+    logger.info("🧹 Очистка state в Postgres завершена")

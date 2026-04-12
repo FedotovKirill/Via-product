@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 import dash_service_display as dsd
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # parse_docker_started_at
@@ -61,87 +58,87 @@ class TestHumanizeUptimeRu:
         assert dsd.humanize_uptime_ru(None) == "—"
 
     def test_zero_seconds(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         assert dsd.humanize_uptime_ru(now, now) == "0 секунд"
 
     def test_1_second(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(seconds=1)
         assert "1 секунда" in dsd.humanize_uptime_ru(started, now)
 
     def test_5_seconds(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(seconds=5)
         result = dsd.humanize_uptime_ru(started, now)
         assert "5 секунд" in result
 
     def test_1_minute(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(minutes=1)
         result = dsd.humanize_uptime_ru(started, now)
         assert "1 минута" in result
 
     def test_5_minutes(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(minutes=5)
         result = dsd.humanize_uptime_ru(started, now)
         assert "5 минут" in result
 
     def test_1_hour(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(hours=1)
         result = dsd.humanize_uptime_ru(started, now)
         assert "1 час" in result
 
     def test_2_hours(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(hours=2)
         result = dsd.humanize_uptime_ru(started, now)
         assert "2 часа" in result
 
     def test_5_hours(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(hours=5)
         result = dsd.humanize_uptime_ru(started, now)
         assert "5 часов" in result
 
     def test_1_day(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(days=1)
         result = dsd.humanize_uptime_ru(started, now)
         assert "1 день" in result
 
     def test_2_days(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(days=2)
         result = dsd.humanize_uptime_ru(started, now)
         assert "2 дня" in result
 
     def test_5_days(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(days=5)
         result = dsd.humanize_uptime_ru(started, now)
         assert "5 дней" in result
 
     def test_1_month(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(days=30)
         result = dsd.humanize_uptime_ru(started, now)
         assert "1 месяц" in result
 
     def test_1_year(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now - timedelta(days=365)
         result = dsd.humanize_uptime_ru(started, now)
         assert "1 год" in result
 
     def test_negative_seconds_returns_dash(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now + timedelta(seconds=10)  # будущее
         assert dsd.humanize_uptime_ru(started, now) == "—"
 
     def test_naive_datetime_treated_as_utc(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started_naive = datetime(2024, 1, 1, 0, 0, 0)  # без tzinfo
         result = dsd.humanize_uptime_ru(started_naive, now)
         assert result != "—"
@@ -160,18 +157,18 @@ class TestFormatLocalStartedAt:
         assert dsd.format_local_started_at(None, "Europe/Moscow") == "—"
 
     def test_formats_datetime(self):
-        dt = datetime(2024, 6, 15, 10, 30, 45, tzinfo=timezone.utc)
+        dt = datetime(2024, 6, 15, 10, 30, 45, tzinfo=UTC)
         result = dsd.format_local_started_at(dt, "Europe/Moscow")
         assert "2024" in result
         assert "06" in result or "6" in result
 
     def test_default_timezone(self):
-        dt = datetime(2024, 6, 15, 10, 30, 45, tzinfo=timezone.utc)
+        dt = datetime(2024, 6, 15, 10, 30, 45, tzinfo=UTC)
         result = dsd.format_local_started_at(dt, "")
         assert "2024" in result
 
     def test_invalid_timezone_falls_back(self):
-        dt = datetime(2024, 6, 15, 10, 30, 45, tzinfo=timezone.utc)
+        dt = datetime(2024, 6, 15, 10, 30, 45, tzinfo=UTC)
         result = dsd.format_local_started_at(dt, "Invalid/Zone")
         assert "2024" in result
 

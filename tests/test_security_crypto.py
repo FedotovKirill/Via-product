@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import pytest
+
 from security import (
+    _COMMON_WEAK_PASSWORDS,
+    SecurityError,
     decrypt_secret,
     encrypt_secret,
     hash_password,
-    verify_password,
-    validate_password_policy,
-    token_hash,
-    make_reset_token,
     load_master_key,
-    _COMMON_WEAK_PASSWORDS,
-    SecurityError,
+    make_reset_token,
+    token_hash,
+    validate_password_policy,
+    verify_password,
 )
 
 
@@ -252,4 +253,3 @@ class TestLoadMasterKey:
         monkeypatch.delenv("APP_MASTER_KEY", raising=False)
         with pytest.raises(SecurityError, match="32 bytes"):
             load_master_key()
-

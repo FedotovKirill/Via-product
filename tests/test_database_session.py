@@ -6,7 +6,6 @@ import pytest
 
 import database.session as sess
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # async_database_url
 # ═══════════════════════════════════════════════════════════════════════════
@@ -51,11 +50,15 @@ class TestSyncDatabaseUrlForAlembic:
         assert result == "postgresql+psycopg://bot:pass@localhost:5432/via"
 
     def test_async_to_psycopg(self):
-        result = sess.sync_database_url_for_alembic("postgresql+asyncpg://bot:pass@localhost:5432/via")
+        result = sess.sync_database_url_for_alembic(
+            "postgresql+asyncpg://bot:pass@localhost:5432/via"
+        )
         assert result == "postgresql+psycopg://bot:pass@localhost:5432/via"
 
     def test_already_psycopg(self):
-        result = sess.sync_database_url_for_alembic("postgresql+psycopg://bot:pass@localhost:5432/via")
+        result = sess.sync_database_url_for_alembic(
+            "postgresql+psycopg://bot:pass@localhost:5432/via"
+        )
         # Уже psycopg — не меняем (replace не сработает на "postgresql+psycopg://")
         assert result == "postgresql+psycopg://bot:pass@localhost:5432/via"
 

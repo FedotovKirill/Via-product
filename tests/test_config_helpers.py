@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import os
-import pytest
 
 import config as cfg
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # want_log_file
@@ -123,8 +121,13 @@ class TestEnvPlaceholderHints:
     """env_placeholder_hints: предупреждения о placeholder-значениях."""
 
     def teardown_method(self):
-        for key in ["MATRIX_HOMESERVER", "MATRIX_USER_ID", "MATRIX_ACCESS_TOKEN",
-                     "REDMINE_URL", "REDMINE_API_KEY"]:
+        for key in [
+            "MATRIX_HOMESERVER",
+            "MATRIX_USER_ID",
+            "MATRIX_ACCESS_TOKEN",
+            "REDMINE_URL",
+            "REDMINE_API_KEY",
+        ]:
             os.environ.pop(key, None)
 
     def test_no_placeholders_no_hints(self):
@@ -198,12 +201,12 @@ class TestParseJsonEnv:
         assert result == {"key": "value"}
 
     def test_valid_list(self):
-        os.environ["TEST_JSON_VAR"] = '[1, 2, 3]'
+        os.environ["TEST_JSON_VAR"] = "[1, 2, 3]"
         result = cfg._parse_json_env("TEST_JSON_VAR", "[]")
         assert result == [1, 2, 3]
 
     def test_invalid_json_returns_default(self):
-        os.environ["TEST_JSON_VAR"] = 'not json'
+        os.environ["TEST_JSON_VAR"] = "not json"
         result = cfg._parse_json_env("TEST_JSON_VAR", '{"fallback": true}')
         assert result == {"fallback": True}
 

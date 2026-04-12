@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 import pytest
 
 import admin.helpers as h
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # _normalize_login
@@ -257,6 +254,7 @@ class TestEnsureCsrf:
         assert set_cookie is True
         # Токен должен быть валидным URL-safe
         import base64
+
         # token_urlsafe использует base64url, проверка что декодируется
         base64.urlsafe_b64decode(token + "==")
 
@@ -313,6 +311,32 @@ class TestRateLimiter:
         for _ in range(100):
             assert limiter.hit("key", limit=1, window_seconds=10) is True
 
+    def test_login_ip_rate_limit(self):
+        """Login IP limit: 10 req/60s."""
+        for _ in range(10):
+            assert self.limiter.hit("login:ip:1.2.3.4", limit=10, window_seconds=60) is True
+        assert self.limiter.hit("login:ip:1.2.3.4", limit=10, window_seconds=60) is False
+
+    def test_login_user_rate_limit(self):
+        """Per-user limit: 5 req/5min."""
+        for _ in range(5):
+            assert self.limiter.hit("login:user:admin", limit=5, window_seconds=300) is True
+        assert self.limiter.hit("login:user:admin", limit=5, window_seconds=300) is False
+        # Другой пользователь не заблокирован
+        assert self.limiter.hit("login:user:other", limit=5, window_seconds=300) is True
+
+    def test_setup_rate_limit(self):
+        """Setup endpoint: 3 req/5min."""
+        for _ in range(3):
+            assert self.limiter.hit("setup:ip:1.2.3.4", limit=3, window_seconds=300) is True
+        assert self.limiter.hit("setup:ip:1.2.3.4", limit=3, window_seconds=300) is False
+
+    def test_reset_rate_limit(self):
+        """Password reset: 5 req/5min."""
+        for _ in range(5):
+            assert self.limiter.hit("reset:ip:1.2.3.4", limit=5, window_seconds=300) is True
+        assert self.limiter.hit("reset:ip:1.2.3.4", limit=5, window_seconds=300) is False
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # _now_utc
@@ -325,12 +349,12 @@ class TestNowUtc:
     def test_has_timezone(self):
         dt = h._now_utc()
         assert dt.tzinfo is not None
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo == UTC
 
     def test_close_to_real_now(self):
-        before = datetime.now(tz=timezone.utc)
+        before = datetime.now(tz=UTC)
         dt = h._now_utc()
-        after = datetime.now(tz=timezone.utc)
+        after = datetime.now(tz=UTC)
         assert before <= dt <= after
 
 
@@ -407,7 +431,7 @@ class TestParseCatalogPayload:
         assert versions == ["1.0"]
 
     def test_non_string_items_converted(self):
-        notify, versions = h._parse_catalog_payload('[123, true]', '[null]')
+        notify, versions = h._parse_catalog_payload("[123, true]", "[null]")
         assert notify == ["123", "True"]  # Python bool → "True"
         assert versions == ["None"]  # null → "None"
 
