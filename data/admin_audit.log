@@ -1,0 +1,1 @@
+12.04.2026 17:37:38 [AUDIT] ADMIN_CRUD entity=bot_user action=create actor=admin entity_id=1 details={"id": "1", "redmine_id": "1972"}

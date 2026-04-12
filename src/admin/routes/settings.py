@@ -306,11 +306,17 @@ async def onboarding_save(
 
     for secret_name in _SECRET_NAMES:
         raw = form.get(f"secret_{secret_name}", "")
-        if not raw:
+        is_masked = "•" in raw
+        is_empty = not raw or not raw.strip()
+        logger.info("[DIAG] Save secret '%s': empty=%s, masked=%s, len=%d",
+                     secret_name, is_empty, is_masked, len(raw) if raw else 0)
+        if is_empty:
+            logger.warning("[DIAG] Save secret '%s': SKIPPING (empty)", secret_name)
             continue
-        # Проверяем, не маскированное ли это значение (содержит •)
-        if "•" in raw:
+        if is_masked:
+            logger.info("[DIAG] Save secret '%s': SKIPPING (masked, keeping old)", secret_name)
             continue
+        logger.info("[DIAG] Save secret '%s': UPDATING (raw len=%d)", secret_name, len(raw))
         existing = await session.execute(select(AppSecret).where(AppSecret.name == secret_name))
         row = existing.scalar_one_or_none()
         enc = encrypt_secret(raw, load_master_key())
@@ -368,7 +374,7 @@ async def onboarding_check(
     csrf_token: Annotated[str, Form()] = "",
     session: AsyncSession = Depends(get_session),
 ):
-    """Проверяет доступность Redmine и Matrix."""
+    """Проверяет доступность Redmine и Matrix с полной диагностикой."""
     logger.info("=== ONBOARDING CHECK STARTED ===")
 
     admin = _admin()
@@ -378,19 +384,38 @@ async def onboarding_check(
 
     admin._verify_csrf(request, csrf_token)
 
-    # 1. Загружаем реальные секреты из БД, чтобы использовать их, если форма прислала маскированные (•••)
+    # ── Диагностика: что пришло из формы ──
+    form_vals = {
+        "REDMINE_URL": secret_REDMINE_URL,
+        "REDMINE_API_KEY": "***" if secret_REDMINE_API_KEY else "(пусто)",
+        "MATRIX_HOMESERVER": secret_MATRIX_HOMESERVER,
+        "MATRIX_USER_ID": secret_MATRIX_USER_ID,
+        "MATRIX_ACCESS_TOKEN": "***" if secret_MATRIX_ACCESS_TOKEN else "(пусто)",
+    }
+    logger.info("[DIAG] Form values: %s", form_vals)
+
+    # 1. Загружаем реальные секреты из БД
     db_secrets: dict[str, str] = {}
     rows = await session.execute(select(AppSecret))
     for row in rows.scalars().all():
         try:
             db_secrets[row.name] = decrypt_secret(row.ciphertext, row.nonce, load_master_key())
-        except Exception:
+        except Exception as e:
+            logger.error("[DIAG] Failed to decrypt secret %s: %s", row.name, e)
             pass
+
+    logger.info("[DIAG] DB secrets loaded: %s", {k: "***" if "KEY" in k or "TOKEN" in k else v for k, v in db_secrets.items()})
 
     def _resolve(secret_name: str, form_value: str) -> str:
         """Если значение маскировано (•), берем из БД. Иначе берем из формы."""
         if "•" in form_value:
-            return db_secrets.get(secret_name, form_value)
+            resolved = db_secrets.get(secret_name, form_value)
+            logger.info("[DIAG] Resolved %s: form has dots → using DB value (len=%d)", secret_name, len(resolved) if resolved else 0)
+            return resolved
+        if not form_value or not form_value.strip():
+            logger.warning("[DIAG] Resolved %s: form value is EMPTY", secret_name)
+        else:
+            logger.info("[DIAG] Resolved %s: using form value (len=%d)", secret_name, len(form_value))
         return form_value
 
     # 2. Разрешаем значения
@@ -400,37 +425,52 @@ async def onboarding_check(
     matrix_uid = _resolve("MATRIX_USER_ID", secret_MATRIX_USER_ID)
     matrix_tok = _resolve("MATRIX_ACCESS_TOKEN", secret_MATRIX_ACCESS_TOKEN)
 
-    # 3. Проверяем (очищаем кэш для fresh check)
-    from redmine_cache import clear_redmine_caches
+    # ── Диагностика: resolved values ──
+    logger.info("[DIAG] Resolved Redmine URL: '%s' (len=%d)", redmine_url, len(redmine_url) if redmine_url else 0)
+    logger.info("[DIAG] Resolved Redmine Key: len=%d, is_empty=%s", len(redmine_key) if redmine_key else 0, not bool(redmine_key))
+    logger.info("[DIAG] Resolved Matrix HS: '%s'", matrix_hs)
+    logger.info("[DIAG] Resolved Matrix UID: '%s'", matrix_uid)
+    logger.info("[DIAG] Resolved Matrix Token: len=%d, is_empty=%s", len(matrix_tok) if matrix_tok else 0, not bool(matrix_tok))
 
-    clear_redmine_caches()
+    # ── Предварительные проверки ──
+    checks = []
 
-    logger.info("Calling _check_redmine_access...")
-    redmine_ok, redmine_msg = await asyncio.to_thread(
-        _check_redmine_access,
-        redmine_url,
-        redmine_key,
-    )
-    logger.info("Redmine result: ok=%s, msg=%s", redmine_ok, redmine_msg)
+    # Redmine check
+    if not redmine_url or not redmine_key:
+        msg = f"Redmine: {'URL' if not redmine_url else 'API-ключ'} не задан"
+        logger.warning("[DIAG] %s", msg)
+        checks.append({"service": "redmine", "ok": False, "message": msg})
+    else:
+        from redmine_cache import clear_redmine_caches
+        clear_redmine_caches()
 
-    logger.info("Calling _check_matrix_access...")
-    matrix_ok, matrix_msg = await asyncio.to_thread(
-        _check_matrix_access,
-        matrix_hs,
-        matrix_uid,
-        matrix_tok,
-    )
-    logger.info("Matrix result: ok=%s, msg=%s", matrix_ok, matrix_msg)
+        logger.info("[DIAG] Calling _check_redmine_access...")
+        redmine_ok, redmine_msg = await asyncio.to_thread(
+            _check_redmine_access, redmine_url, redmine_key
+        )
+        logger.info("[DIAG] Redmine result: ok=%s, msg=%s", redmine_ok, redmine_msg)
+        checks.append({"service": "redmine", "ok": redmine_ok, "message": redmine_msg})
 
-    ok = redmine_ok and matrix_ok
-    logger.info("Final check result: ok=%s", ok)
+    # Matrix check
+    if not matrix_hs or not matrix_uid or not matrix_tok:
+        missing = [n for n, v in [("homeserver", matrix_hs), ("user_id", matrix_uid), ("token", matrix_tok)] if not v]
+        msg = f"Matrix: не заданы {', '.join(missing)}"
+        logger.warning("[DIAG] %s", msg)
+        checks.append({"service": "matrix", "ok": False, "message": msg})
+    else:
+        logger.info("[DIAG] Calling _check_matrix_access...")
+        matrix_ok, matrix_msg = await asyncio.to_thread(
+            _check_matrix_access, matrix_hs, matrix_uid, matrix_tok
+        )
+        logger.info("[DIAG] Matrix result: ok=%s, msg=%s", matrix_ok, matrix_msg)
+        checks.append({"service": "matrix", "ok": matrix_ok, "message": matrix_msg})
+
+    ok = all(c["ok"] for c in checks)
+    logger.info("[DIAG] Final check result: ok=%s", ok)
 
     return JSONResponse(
         {
             "ok": ok,
-            "checks": [
-                {"service": "redmine", "ok": redmine_ok, "message": redmine_msg},
-                {"service": "matrix", "ok": matrix_ok, "message": matrix_msg},
-            ],
+            "checks": checks,
         }
     )
