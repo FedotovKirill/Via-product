@@ -22,7 +22,7 @@ logger = logging.getLogger("redmine_admin")
 
 _ROOT = Path(__file__).resolve().parents[2]
 _templates_dir = str(_ROOT / "templates" / "admin")
-_jinja_env = Environment(loader=FileSystemLoader(_templates_dir), autoescape=True, cache_size=0)
+_jinja_env = Environment(loader=FileSystemLoader(_templates_dir), autoescape=True, cache_size=128)
 templates = Jinja2Templates(env=_jinja_env)
 
 

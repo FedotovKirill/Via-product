@@ -69,7 +69,7 @@ async def try_acquire_user_lease(
         lease_owner_id=lease_owner_id,
         lease_until=lease_until,
     )
-    stmt = stmt.on_conflict_do_update(
+    stmt = stmt.on_conflict_do_update(  # type: ignore[assignment]
         index_elements=[BotUserLease.user_redmine_id],
         set_={
             "lease_owner_id": lease_owner_id,

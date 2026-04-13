@@ -108,6 +108,7 @@ async def send_safe(
     room_id: str,
     notification_type: str,
     extra_text: str = "",
+    db_session=None,
 ) -> None:
     """Обёртка: проверка DND/рабочих часов → отправка с перехватом ошибок."""
     from bot.logic import _cfg_for_room, _issue_priority_name
@@ -125,3 +126,25 @@ async def send_safe(
         await send_matrix_message(client, issue, room_id, notification_type, extra_text)
     except Exception as e:
         logger.error("❌ Ошибка отправки #%s → %s: %s", issue.id, room_id[:20], e)
+        # Сохраняем в DLQ для повторной отправки
+        if db_session is not None:
+            try:
+                from database.dlq_repo import enqueue_notification
+
+                payload = {
+                    "issue_id": issue.id,
+                    "room_id": room_id,
+                    "notification_type": notification_type,
+                    "extra_text": extra_text,
+                }
+                await enqueue_notification(
+                    db_session,
+                    user_redmine_id=user_cfg.get("redmine_id", 0),
+                    issue_id=issue.id,
+                    room_id=room_id,
+                    notification_type=notification_type,
+                    payload=payload,
+                    error=str(e),
+                )
+            except Exception as dlq_err:
+                logger.error("❌ Не удалось сохранить в DLQ: %s", dlq_err)

@@ -8,9 +8,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nio import AsyncClient
@@ -23,13 +24,13 @@ async def check_all_users(
     client: AsyncClient,
     redmine: Redmine,
     *,
-    now_tz,
+    now_tz: Callable[[], datetime],
     check_interval: int,
     runtime_status_file: Path,
     bot_instance_id,
     bot_lease_ttl: int,
-    redmine_client_for_user,
-    check_user_issues_fn,
+    redmine_client_for_user: Callable[[Redmine, dict[str, Any]], Redmine],
+    check_user_issues_fn: Callable[..., Any],
     last_check_time: dict[int, datetime],
 ) -> None:
     """Проверка задач ВСЕХ пользователей. Вызывается по таймеру."""
@@ -61,7 +62,16 @@ async def check_all_users(
 
                 await session.commit()
                 rm_user = redmine_client_for_user(redmine, user_cfg)
-                await check_user_issues_fn(client, rm_user, user_cfg, db_session=session)
+                await check_user_issues_fn(
+                    client,
+                    rm_user,
+                    user_cfg,
+                    session,
+                    now_tz=now_tz,
+                    today_tz=lambda: now_tz().date(),
+                    ensure_tz=lambda dt: dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt,
+                    last_check_time=last_check_time,
+                )
                 await session.commit()
                 last_check_time[uid] = datetime.now(UTC)
             except Exception as e:
@@ -98,9 +108,9 @@ async def daily_report(
     client: AsyncClient,
     redmine: Redmine,
     *,
-    now_tz,
-    today_tz,
-    redmine_client_for_user,
+    now_tz: Callable[[], datetime],
+    today_tz: Callable[[], datetime],
+    redmine_client_for_user: Callable[[Redmine, dict[str, Any]], Redmine],
     redmine_url: str,
 ) -> None:
     """Утренний отчёт (09:00) — каждому пользователю с notify=all."""
@@ -184,7 +194,12 @@ async def daily_report(
             logger.error("❌ Отправка отчёта user %s: %s", uid, e)
 
 
-async def cleanup_state_files(redmine: Redmine, *, now_tz, redmine_client_for_user) -> None:
+async def cleanup_state_files(
+    redmine: Redmine,
+    *,
+    now_tz: Callable[[], datetime],
+    redmine_client_for_user: Callable[[Redmine, dict[str, Any]], Redmine],
+) -> None:
     """Очистка state в Postgres для закрытых задач (03:00)."""
     from bot.config_state import USERS
     from database.session import get_session_factory
@@ -214,3 +229,57 @@ async def cleanup_state_files(redmine: Redmine, *, now_tz, redmine_client_for_us
         await session.commit()
 
     logger.info("🧹 Очистка state в Postgres завершена")
+
+
+async def retry_dlq_notifications(
+    client: AsyncClient,
+    *,
+    now_tz: Callable[[], datetime],
+) -> int:
+    """Повторная отправка уведомлений из dead-letter queue.
+
+    Возвращает количество обработанных уведомлений.
+    """
+    from database.dlq_repo import (
+        dequeue_due_notifications,
+        mark_failed,
+        mark_sent,
+    )
+    from database.session import get_session_factory
+    from matrix_send import room_send_with_retry
+
+    session_factory = get_session_factory()
+    processed = 0
+
+    async with session_factory() as session:
+        due = await dequeue_due_notifications(session)
+        if not due:
+            return 0
+
+        logger.info("🔄 DLQ retry: %d уведомлений готово к отправке", len(due))
+
+        for notif in due:
+            try:
+                await room_send_with_retry(client, notif.room_id, notif.payload)
+                await mark_sent(session, notif.id)
+                processed += 1
+                logger.info(
+                    "✅ DLQ retry #%s → %s (попытка %d/%d)",
+                    notif.issue_id,
+                    notif.room_id[:20],
+                    notif.retry_count,
+                    5,
+                )
+            except Exception as e:
+                await mark_failed(session, notif.id, str(e))
+                logger.warning(
+                    "⚠ DLQ retry #%s failed (попытка %d/5): %s",
+                    notif.issue_id,
+                    notif.retry_count + 1,
+                    e,
+                )
+
+        await session.commit()
+
+    logger.info("✅ DLQ retry завершена: %d/%d успешно", processed, len(due))
+    return processed

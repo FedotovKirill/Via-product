@@ -15,8 +15,19 @@ from nio import RoomSendError
 
 logger = logging.getLogger("redmine_bot")
 
-MAX_RETRIES = 3
-RETRY_BASE_SEC = 1.0
+
+def _get_retry_settings() -> tuple[int, float]:
+    """Читает retry-настройки из config (с fallback)."""
+    try:
+        from config import MATRIX_RETRY_BASE_DELAY_SEC, MATRIX_RETRY_MAX_ATTEMPTS
+
+        return MATRIX_RETRY_MAX_ATTEMPTS, MATRIX_RETRY_BASE_DELAY_SEC
+    except Exception:
+        return 3, 1.0
+
+
+# Re-export для обратной совместимости (тесты)
+MAX_RETRIES, RETRY_BASE_SEC = _get_retry_settings()
 
 
 async def room_send_with_retry(client, room_id, content):
@@ -26,9 +37,10 @@ async def room_send_with_retry(client, room_id, content):
     При RoomSendError или исключении сети — warning и пауза до MAX_RETRIES раз.
     Итог: проброс последней ошибки.
     """
+    max_retries, retry_base_sec = _get_retry_settings()
     last_err = None
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, max_retries + 1):
         try:
             resp = await client.room_send(
                 room_id=room_id, message_type="m.room.message", content=content
@@ -53,14 +65,14 @@ async def room_send_with_retry(client, room_id, content):
         except Exception as e:
             last_err = e
 
-        if attempt >= MAX_RETRIES:
+        if attempt >= max_retries:
             break
 
-        delay = RETRY_BASE_SEC * (2 ** (attempt - 1))
+        delay = retry_base_sec * (2 ** (attempt - 1))
         logger.warning(
             "Matrix send failed (%s/%s): %s; retry in %.1fs",
             attempt,
-            MAX_RETRIES,
+            max_retries,
             last_err,
             delay,
         )
@@ -68,4 +80,4 @@ async def room_send_with_retry(client, room_id, content):
 
     if last_err is not None:
         raise last_err
-    raise RuntimeError(f"Matrix room_send failed after {MAX_RETRIES} attempts (room={room_id})")
+    raise RuntimeError(f"Matrix room_send failed after {max_retries} attempts (room={room_id})")

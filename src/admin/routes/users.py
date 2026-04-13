@@ -275,8 +275,12 @@ async def user_test_message(
     redmine_key = await admin._load_secret_plain(session, "REDMINE_API_KEY")
     bot_mxid = await admin._load_secret_plain(session, "MATRIX_USER_ID")
 
-    logger.info("[DIAG] Test message: bot_mxid='%s', redmine_url='%s', redmine_key_len=%d",
-                bot_mxid, redmine_url, len(redmine_key) if redmine_key else 0)
+    logger.info(
+        "[DIAG] Test message: bot_mxid='%s', redmine_url='%s', redmine_key_len=%d",
+        bot_mxid,
+        redmine_url,
+        len(redmine_key) if redmine_key else 0,
+    )
 
     form = await request.form()
     raw_uid = form.get("user_id", "")
@@ -296,7 +300,9 @@ async def user_test_message(
 
     homeserver = client.homeserver
     matrix_domain = homeserver.replace("https://", "").replace("http://", "").rstrip("/")
-    logger.info("[DIAG] Test message: homeserver='%s', matrix_domain='%s'", homeserver, matrix_domain)
+    logger.info(
+        "[DIAG] Test message: homeserver='%s', matrix_domain='%s'", homeserver, matrix_domain
+    )
 
     if target_mxid and ":" not in target_mxid:
         if not target_mxid.startswith("@"):
@@ -309,8 +315,13 @@ async def user_test_message(
             await client.close()
             return JSONResponse({"ok": False, "error": "Пользователь не найден"}, status_code=404)
 
-        logger.info("[DIAG] Test message: user row: id=%d, room='%s', redmine_id=%d, group_id=%s",
-                     row.id, row.room, row.redmine_id, row.group_id)
+        logger.info(
+            "[DIAG] Test message: user row: id=%d, room='%s', redmine_id=%d, group_id=%s",
+            row.id,
+            row.room,
+            row.redmine_id,
+            row.group_id,
+        )
 
         raw_room = (row.room or "").strip()
 
@@ -329,8 +340,11 @@ async def user_test_message(
                 target_mxid = f"@{raw_room}"
             room_id = None
 
-        logger.info("[DIAG] Test message: after room processing: target_mxid='%s', room_id='%s'",
-                     target_mxid, room_id)
+        logger.info(
+            "[DIAG] Test message: after room processing: target_mxid='%s', room_id='%s'",
+            target_mxid,
+            room_id,
+        )
 
         if not target_mxid and not room_id and redmine_url and redmine_key and row.redmine_id:
             try:
@@ -338,15 +352,21 @@ async def user_test_message(
 
                 logger.info("[DIAG] Test message: fetching Redmine user id=%d", row.redmine_id)
                 rdata, err = fetch_redmine_user_by_id(row.redmine_id, redmine_url, redmine_key)
-                logger.info("[DIAG] Test message: Redmine fetch result: err=%s, rdata keys=%s",
-                             err, list(rdata.keys()) if rdata else None)
+                logger.info(
+                    "[DIAG] Test message: Redmine fetch result: err=%s, rdata keys=%s",
+                    err,
+                    list(rdata.keys()) if rdata else None,
+                )
                 if rdata:
                     login = rdata.get("login", "")
                     if login:
                         domain = bot_mxid.split(":", 1)[1] if ":" in bot_mxid else ""
                         target_mxid = f"@{login}:{domain}" if domain else None
-                        logger.info("[DIAG] Test message: resolved target_mxid from Redmine login='%s' → '%s'",
-                                     login, target_mxid)
+                        logger.info(
+                            "[DIAG] Test message: resolved target_mxid from Redmine login='%s' → '%s'",
+                            login,
+                            target_mxid,
+                        )
             except Exception as e:
                 logger.error("[DIAG] Test message: Redmine fetch exception: %s", e, exc_info=True)
                 pass

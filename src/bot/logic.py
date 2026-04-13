@@ -9,7 +9,25 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from typing import Protocol
+
+    from redminelib.resources import IssueJournal
+
+    class _IssueLike(Protocol):
+        id: int
+        status: Any  # .name
+        priority: Any  # .name
+        subject: str
+        due_date: Any  # date | None
+        fixed_version: Any  # .name | None
+        journals: Any  # iterable
+
+else:
+    _IssueLike = Any
 
 # ═══════════════════════════════════════════════════════════════════════════
 # КОНСТАНТЫ
@@ -119,7 +137,7 @@ def ensure_tz(dt: datetime, tz: ZoneInfo) -> datetime:
     return dt
 
 
-def get_version_name(issue) -> str | None:
+def get_version_name(issue: _IssueLike) -> str | None:
     """Получает название версии задачи (или None)."""
     try:
         return issue.fixed_version.name
@@ -127,7 +145,7 @@ def get_version_name(issue) -> str | None:
         return None
 
 
-def should_notify(user_cfg: dict, notification_type: str) -> bool:
+def should_notify(user_cfg: dict[str, Any], notification_type: str) -> bool:
     """
     Проверяет, подписан ли пользователь на данный тип уведомлений.
     "all" — подписан на всё.
@@ -175,10 +193,10 @@ _LEGACY_VERSION_FALLBACK_KEY = "РЕД ОС"
 
 
 def _extra_rooms_for_issue_version(
-    issue,
-    user_cfg: dict,
+    issue: _IssueLike,
+    user_cfg: dict[str, Any],
     version_room_map: dict[str, str],
-    users: list[dict],
+    users: list[dict[str, Any]],
 ) -> set[str]:
     """
     Доп. комнаты по названию версии задачи в Redmine.
@@ -205,21 +223,21 @@ def _extra_rooms_for_issue_version(
 
 
 def get_extra_rooms_for_new(
-    issue,
-    user_cfg: dict,
+    issue: _IssueLike,
+    user_cfg: dict[str, Any],
     version_room_map: dict[str, str],
-    users: list[dict],
+    users: list[dict[str, Any]],
 ) -> set[str]:
     """Доп. комнаты для НОВОЙ задачи — по версии и глобальным маршрутам."""
     return _extra_rooms_for_issue_version(issue, user_cfg, version_room_map, users)
 
 
 def get_extra_rooms_for_rv(
-    issue,
-    user_cfg: dict,
+    issue: _IssueLike,
+    user_cfg: dict[str, Any],
     status_room_map: dict[str, str],
     version_room_map: dict[str, str],
-    users: list[dict],
+    users: list[dict[str, Any]],
 ) -> set[str]:
     """Доп. комнаты для статуса «Передано в работу.РВ»."""
     rooms: set[str] = set()
@@ -230,7 +248,10 @@ def get_extra_rooms_for_rv(
     return rooms
 
 
-def _group_member_rooms(user_cfg: dict, users: list[dict]) -> set[str]:
+def _group_member_rooms(
+    user_cfg: dict[str, Any],
+    users: list[dict[str, Any]],
+) -> set[str]:
     """Личные комнаты участников той же группы."""
     gid = user_cfg.get("group_id")
     if gid is None:
@@ -245,11 +266,14 @@ def _group_member_rooms(user_cfg: dict, users: list[dict]) -> set[str]:
     return out
 
 
-def _group_room(user_cfg: dict) -> str:
+def _group_room(user_cfg: dict[str, Any]) -> str:
     return (user_cfg.get("group_room") or "").strip()
 
 
-def _cfg_for_room(user_cfg: dict, room_id: str) -> dict:
+def _cfg_for_room(
+    user_cfg: dict[str, Any],
+    room_id: str,
+) -> dict[str, Any]:
     """
     Для Matrix-комнаты группы применяются типы уведомлений и расписание группы.
     """
@@ -281,7 +305,7 @@ def _cfg_for_room(user_cfg: dict, room_id: str) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def detect_status_change(issue, sent: dict) -> str | None:
+def detect_status_change(issue: _IssueLike, sent: dict[str, dict]) -> str | None:
     """
     Сравнивает текущий статус задачи с сохранённым.
     Возвращает старый статус если изменился, иначе None.
@@ -295,7 +319,10 @@ def detect_status_change(issue, sent: dict) -> str | None:
     return None
 
 
-def detect_new_journals(issue, journals_state: dict) -> tuple[list, int]:
+def detect_new_journals(
+    issue: _IssueLike,
+    journals_state: dict[str, Any],
+) -> tuple[list[IssueJournal], int]:
     """
     Находит новые записи в журнале задачи.
     Returns: (new_journals, max_journal_id)
@@ -321,7 +348,7 @@ def detect_new_journals(issue, journals_state: dict) -> tuple[list, int]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def resolve_field_value(field_name: str, value) -> str:
+def resolve_field_value(field_name: str, value: Any) -> str:
     """Переводит ID в человекочитаемое имя для известных полей."""
     if value is None or value == "":
         return "—"
@@ -331,7 +358,7 @@ def resolve_field_value(field_name: str, value) -> str:
     return str(value)
 
 
-def describe_journal(journal, skip_status: bool = False) -> str | None:
+def describe_journal(journal: IssueJournal, skip_status: bool = False) -> str | None:
     """Описывает одну запись журнала в человекочитаемом виде."""
     parts: list[str] = []
 

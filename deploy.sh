@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Zero-Config запуск Via
-set -e
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
@@ -31,7 +31,11 @@ fi
 
 # Запускаем сервисы
 echo "[DEPLOY] 📦 Building and starting containers..."
-docker compose up --build -d
+if ! docker compose up --build -d; then
+    echo "[DEPLOY] ❌ Ошибка запуска контейнеров"
+    echo "[DEPLOY] Логи: docker compose logs"
+    exit 1
+fi
 
 # Ждём healthy status
 echo "[DEPLOY] ⏳ Waiting for services to be ready..."
@@ -45,6 +49,12 @@ while [ $WAITED -lt $MAX_WAIT ]; do
     sleep 5
     WAITED=$((WAITED + 5))
 done
+
+if [ $WAITED -ge $MAX_WAIT ]; then
+    echo "[DEPLOY] ⚠ Сервисы не стали healthy за ${MAX_WAIT}с"
+    echo "[DEPLOY] Проверьте логи: docker compose logs"
+    exit 1
+fi
 
 echo ""
 echo "[DEPLOY] ✅ Via is running!"

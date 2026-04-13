@@ -14,6 +14,16 @@ import httpx
 logger = logging.getLogger("redmine_bot")
 
 
+def _get_heartbeat_interval() -> int:
+    """Читает интервал heartbeat из config (с fallback)."""
+    try:
+        from config import HEARTBEAT_INTERVAL_SEC
+
+        return HEARTBEAT_INTERVAL_SEC
+    except Exception:
+        return 60
+
+
 def start_heartbeat_task(admin_url: str = "http://admin:8080") -> asyncio.Task:
     """Создаёт и возвращает asyncio.Task для heartbeat.
 
@@ -27,6 +37,8 @@ def start_heartbeat_task(admin_url: str = "http://admin:8080") -> asyncio.Task:
     else:
         logger.warning("⚠️ Heartbeat отключён (ADMIN_URL не задан)")
 
+    interval = _get_heartbeat_interval()
+
     async def _loop():
         if not heartbeat_url:
             return
@@ -39,6 +51,6 @@ def start_heartbeat_task(admin_url: str = "http://admin:8080") -> asyncio.Task:
                     )
                 except Exception as e:
                     logger.debug("Heartbeat failed: %s", e)
-                await asyncio.sleep(60)
+                await asyncio.sleep(interval)
 
     return asyncio.create_task(_loop())

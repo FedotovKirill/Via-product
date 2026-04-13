@@ -7,8 +7,9 @@ check_user_issues — ядро бота: загрузка из Redmine, дете
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from redminelib.exceptions import AuthError, BaseRedmineError, ForbiddenError
 
@@ -23,12 +24,12 @@ logger = logging.getLogger("redmine_bot")
 async def check_user_issues(
     client: AsyncClient,
     redmine: Redmine,
-    user_cfg: dict,
+    user_cfg: dict[str, Any],
     db_session: AsyncSession,
     *,
-    now_tz,
-    today_tz,
-    ensure_tz,
+    now_tz: Callable[[], datetime],
+    today_tz: Callable[[], datetime],
+    ensure_tz: Callable[[datetime], datetime],
     last_check_time: dict[int, datetime],
 ) -> None:
     """Проверяет все открытые задачи одного пользователя.
@@ -297,12 +298,32 @@ async def check_user_issues(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-# Эти константы задаются из main.py через _init_processor_config
-GROUP_REPEAT_SECONDS: int = 1800
-REMINDER_AFTER: int = 3600
+
+# Константы задаются из main.py через _init_processor_config
+# Значения по умолчанию — из config.py
+def _get_group_repeat_seconds() -> int:
+    try:
+        from config import GROUP_REPEAT_SECONDS
+
+        return GROUP_REPEAT_SECONDS
+    except Exception:
+        return 1800
 
 
-def _cfg_for_room(user_cfg: dict, room_id: str) -> dict:
+def _get_reminder_after() -> int:
+    try:
+        from config import REMINDER_AFTER
+
+        return REMINDER_AFTER
+    except Exception:
+        return 3600
+
+
+GROUP_REPEAT_SECONDS: int = _get_group_repeat_seconds()
+REMINDER_AFTER: int = _get_reminder_after()
+
+
+def _cfg_for_room(user_cfg: dict[str, Any], room_id: str) -> dict[str, Any]:
     from bot.logic import _cfg_for_room as _raw
 
     return _raw(user_cfg, room_id)

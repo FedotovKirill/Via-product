@@ -120,34 +120,28 @@ def _group_member_rooms(user_cfg: dict) -> set[str]:
 
 
 # ── Re-export sender и scheduler для тестов ──────────────────────────────────
-
-import bot.sender as _sender_mod  # noqa: E402
-from bot.processor import check_user_issues  # noqa: E402
-from bot.scheduler import check_all_users, cleanup_state_files, daily_report  # noqa: E402
-from bot.sender import send_matrix_message, send_safe  # noqa: E402
+# fmt: off
+import bot.sender as _sender_mod  # noqa: E402, I001
+from bot.processor import check_user_issues  # noqa: E402, I001
+from bot.scheduler import check_all_users, cleanup_state_files, daily_report  # noqa: E402, I001
+from bot.sender import send_matrix_message, send_safe  # noqa: E402, I001
+# fmt: on
 
 # ── Config (не-секретные) ───────────────────────────────────────────────────
+from config import (  # noqa: E402, I001
+    BOT_LEASE_TTL_SECONDS,
+    BOT_TIMEZONE,
+    CHECK_INTERVAL,
+    CONFIG_POLL_INTERVAL_SEC,
+    GROUP_REPEAT_SECONDS,
+    MATRIX_DEVICE_ID as MATRIX_DEVICE_ID_ENV,
+    REMINDER_AFTER,
+)
 
-MATRIX_DEVICE_ID = (os.getenv("MATRIX_DEVICE_ID") or "").strip() or "redmine_bot"
-BOT_TZ = ZoneInfo(os.getenv("BOT_TIMEZONE", "Europe/Moscow"))
-
-
-# Тайминги
-def _parse_check_interval() -> int:
-    raw = os.getenv("CHECK_INTERVAL", "90").strip()
-    try:
-        v = int(raw)
-    except ValueError:
-        return 90
-    return max(15, min(v, 86400))
-
-
-CHECK_INTERVAL = _parse_check_interval()
-GROUP_REPEAT_SECONDS = int(os.getenv("GROUP_REPEAT_SECONDS", "1800").strip() or "1800")
-REMINDER_AFTER = 3600
+MATRIX_DEVICE_ID = MATRIX_DEVICE_ID_ENV or "redmine_bot"
+BOT_TZ = ZoneInfo(BOT_TIMEZONE)
 
 # Lease
-BOT_LEASE_TTL_SECONDS = int(os.getenv("BOT_LEASE_TTL_SECONDS", "300").strip() or "300")
 BOT_LEASE_TTL_SECONDS = max(15, min(BOT_LEASE_TTL_SECONDS, 3600))
 _BOT_INSTANCE_ID_RAW = (os.getenv("BOT_INSTANCE_ID") or "").strip()
 BOT_INSTANCE_ID_UUID = uuid.UUID(_BOT_INSTANCE_ID_RAW) if _BOT_INSTANCE_ID_RAW else uuid.uuid4()
@@ -264,7 +258,7 @@ async def main() -> None:
     from database.session import get_session_factory
     from security import decrypt_secret, load_master_key
 
-    poll_interval = 30
+    poll_interval = CONFIG_POLL_INTERVAL_SEC
     session_factory = get_session_factory()
     _SECRET_NAMES = [
         "REDMINE_URL",
@@ -292,8 +286,12 @@ async def main() -> None:
                     ct, nonce = secrets_map[name]
                     try:
                         config[name] = decrypt_secret(ct, nonce, key)
-                    except Exception:
-                        logger.warning("⚠ Не удалось расшифровать секрет %s", name)
+                    except Exception as exc:
+                        logger.warning(
+                            "⚠ Не удалось расшифровать секрет %s: %s",
+                            name,
+                            type(exc).__name__,
+                        )
                         config[name] = ""
                 else:
                     config[name] = ""
@@ -309,8 +307,9 @@ async def main() -> None:
                 break
             else:
                 logger.warning(
-                    "⏳ Конфиг не настроен (отсутствуют: %s). Повтор через %d с...",
-                    ", ".join(missing),
+                    "⏳ Конфиг не настроен (отсутствуют: %s/%s). Повтор через %d с...",
+                    len(missing),
+                    len(_SECRET_NAMES),
                     poll_interval,
                 )
         except Exception as e:
@@ -318,7 +317,11 @@ async def main() -> None:
             if "relation" in error_msg and "does not exist" in error_msg:
                 logger.warning("⏳ Ожидание инициализации БД (таблицы еще не созданы)...")
             else:
-                logger.error("Ошибка загрузки конфига: %s", e)
+                logger.error(
+                    "Ошибка загрузки конфига из БД (%s): %s",
+                    type(e).__name__,
+                    error_msg,
+                )
 
         await asyncio.sleep(poll_interval)
 
@@ -388,7 +391,12 @@ async def main() -> None:
     # ── Импорт функций для scheduler ──
     from bot.heartbeat import start_heartbeat_task
     from bot.processor import check_user_issues
-    from bot.scheduler import check_all_users, cleanup_state_files, daily_report
+    from bot.scheduler import (
+        check_all_users,
+        cleanup_state_files,
+        daily_report,
+        retry_dlq_notifications,
+    )
 
     def _redmine_client_for_user(redmine_inst, user_cfg):
         from bot.sender import REDMINE_URL as _RU
@@ -457,6 +465,16 @@ async def main() -> None:
             "now_tz": now_tz,
             "redmine_client_for_user": _redmine_client_for_user,
         },
+    )
+
+    scheduler.add_job(
+        retry_dlq_notifications,
+        "interval",
+        seconds=120,
+        args=[client],
+        kwargs={"now_tz": now_tz},
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.start()

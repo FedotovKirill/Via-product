@@ -11,10 +11,24 @@ select = [
     "W",     # pycodestyle warnings
     "I",     # isort (сортировка импортов)
     "UP",    # pyupgrade
+    "S",     # flake8-bandit (безопасность)
+    "SIM",   # flake8-simplify
 ]
 
 ignore = [
     "E501",  # line length — ruff-format сам форматирует
+    "S101",  # assert используется в тестах (допустимо)
+    "S603",  # subprocess call — допустимо для docker control
+    "S607",  # start process with partial path — допустимо
+    "S105",  # hardcoded password — false positive на секрет-ключах (__service_timezone и т.п.)
+    "S107",  # hardcoded password default — допустимо для regen-параметров форм
+    "S110",  # try-except-pass — допустимо в heartbeat и non-critical коде
+    "S310",  # URL open — допустимо для HTTP-запросов
+    "S701",  # jinja2 autoescape=False — намеренно, шаблоны контролируются разработчиком
+    "SIM102",  # nested if — иногда читаемее
+    "SIM103",  # return condition directly — не всегда уместно
+    "SIM105",  # contextlib.suppress — явный try/except читаемее
+    "SIM108",  # ternary operator — не всегда читаемее
 ]
 
 [lint.isort]

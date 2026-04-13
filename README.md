@@ -33,16 +33,34 @@ docker compose up --build -d
 ## Архитектура
 
 ```
-┌──────────   REST API (~каждые 90с)   ┌──────────────────┐  Matrix C-S API   ┌──────────┐
-│  Redmine │ ◄───────────────────────── │ src/bot/main.py  │ ────────────────► │  Matrix  │
-│  (задачи)│                            │ APScheduler      │                   │  (чат)   │
+┌──────────┐    REST API (polling)      ┌──────────────────┐  Matrix C-S API  ┌──────────┐
+│  Redmine │◄───────────────────────────│  src/bot/main.py │────────────────►│  Matrix  │
+│  (задачи)│    APScheduler: 90с        │  (entry point)   │  (уведомления)   │  (чат)   │
 └──────────┘                            └──────┬───────────┘                   └──────────┘
                                                │
-                                        ┌──────▼─────────────────────┐
-                                        │ Postgres: bot_issue_state  │
-                                        │ + bot_user_leases (lease)  │
-                                        └────────────────────────────┘
+                        ┌──────────────────────┼──────────────────────┐
+                        │                      │                      │
+                   ┌────▼─────┐          ┌─────▼─────┐          ┌─────▼──────┐
+                   │PostgreSQL│          │ Postgres  │          │  Postgres  │
+                   │bot_users │          │bot_issue_ │          │ pending_   │
+                   │groups    │          │ state     │          │ notifi-    │
+                   │routes    │          │leases     │          │ cations    │
+                   └──────────┘          └───────────┘          │  (DLQ)     │
+                                                                └────────────┘
+
+┌───────────────────────────────────────────────────────────────────────┐
+│                        src/admin/ (FastAPI)                           │
+│  /dashboard  /users  /groups  /settings  /events  /ops  /health       │
+│  FastAPI + Jinja2 + HTMX → админ-панель на :8080                      │
+└───────────────────────────────────────────────────────────────────────┘
 ```
+
+**Ключевые принципы:**
+- **Чистая бизнес-логика** (`bot/logic.py`) — без I/O, легко тестируется
+- **Lease-координация** — несколько инстансов бота не дублируют работу
+- **Dead-letter queue** — уведомления не теряются при сбое Matrix
+- **Шифрование секретов** — AES-GCM, master key в Docker secret / env
+- **Graceful shutdown** — корректная остановка по SIGTERM
 
 Docker-сервисы: **bot** (опрос Redmine), **admin** (FastAPI панель), **postgres** (PostgreSQL 16), **docker-socket-proxy** (управление ботом из панели).
 
@@ -56,32 +74,71 @@ Via/
 ├── deploy.sh
 ├── requirements.txt
 ├── src/
-│   ├── bot/main.py          # Основной цикл бота
-│   ├── admin/main.py        # Веб-панель (FastAPI + Jinja2 + HTMX)
-│   ├── admin/routes/        # Маршруты админки
-│   ├── database/            # SQLAlchemy модели и сессии
-│   ├── config.py            # Загрузка .env
-│   ├── security.py          # Хеширование, шифрование
-│   ├── matrix_send.py       # Отправка в Matrix с retry
-│   └── preferences.py       # Рабочие часы, DND
-├── templates/admin/
-│   ├── auth/                # login, setup, reset_password, onboarding
-│   └── panel/               # dashboard, users, groups, events, settings
-├── static/admin/css/        # Стили панели
-├── alembic/                 # Миграции БД
-├── scripts/                 # Вспомогательные скрипты
-└── tests/                   # pytest + Playwright E2E
+│   ├── bot/
+│   │   ├── main.py              # Entry point: APScheduler, graceful shutdown
+│   │   ├── logic.py             # Чистая бизнес-логика (без I/O)
+│   │   ├── processor.py         # Обработка задач одного пользователя
+│   │   ├── scheduler.py         # check_all_users, daily_report, DLQ retry
+│   │   ├── sender.py            # Отправка через Jinja2 шаблон
+│   │   └── heartbeat.py         # Heartbeat на админку
+│   ├── admin/
+│   │   ├── main.py              # FastAPI app, lifespan, routers
+│   │   └── routes/              # 14 маршрутов (auth, users, groups, etc.)
+│   ├── database/
+│   │   ├── models.py            # 16 ORM-моделей (SQLAlchemy)
+│   │   ├── state_repo.py        # bot_issue_state, bot_user_leases
+│   │   └── dlq_repo.py          # Dead-letter queue для уведомлений
+│   ├── config.py                # Загрузка .env, централизованные константы
+│   ├── security.py              # Argon2, AES-GCM шифрование
+│   └── matrix_send.py           # Отправка в Matrix с retry/backoff
+├── templates/
+│   ├── admin/                   # Панель администратора
+│   └── bot/notification.html    # Jinja2 шаблон уведомления
+├── alembic/                     # 18 миграций БД
+├── tests/                       # 31 файл: pytest + Playwright E2E
+└── docs/                        # ADMINISTRATOR_GUIDE, DEPLOYMENT, etc.
 ```
 
-## Тесты
+## Качество кода
+
+| Инструмент | Назначение |
+|-----------|------------|
+| **ruff** | Линтер + форматтер (E, F, W, I, UP, S, SIM) |
+| **mypy** | Проверка типов (core files: logic, scheduler, processor, config) |
+| **pytest** | 100+ юнит-тестов + интеграционные |
+| **Playwright** | E2E тесты админ-панели |
+| **pre-commit** | Автоматическая проверка перед коммитом |
 
 ```bash
-# Юнит-тесты и API
+# Линтер
+python -m ruff check src/
+
+# Типы
+PYTHONPATH=src python -m mypy src/bot/logic.py src/bot/scheduler.py \
+  src/bot/processor.py src/matrix_send.py src/config.py src/database/state_repo.py \
+  --explicit-package-bases
+
+# Тесты
 python -m pytest tests/ -v --tb=short --ignore=tests/e2e
 
 # E2E (нужен браузер: python -m playwright install chromium)
 python -m pytest tests/e2e/ -v --tb=short
 ```
+
+## Конфигурация
+
+Основные переменные в `.env` (см. [.env.example](.env.example)):
+
+| Переменная | По умолчанию | Описание |
+|-----------|-------------|----------|
+| `CHECK_INTERVAL` | `90` | Интервал опроса Redmine (сек) |
+| `REMINDER_AFTER` | `3600` | Напоминание после (сек) |
+| `GROUP_REPEAT_SECONDS` | `1800` | Повтор уведомлений в группу (сек) |
+| `MATRIX_RETRY_MAX_ATTEMPTS` | `3` | Попытки отправки в Matrix |
+| `MATRIX_RETRY_BASE_DELAY_SEC` | `1.0` | Базовая задержка retry (сек) |
+| `BOT_LEASE_TTL_SECONDS` | `300` | Lease-координация (сек) |
+| `HEARTBEAT_INTERVAL_SEC` | `60` | Heartbeat на админку (сек) |
+| `CONFIG_POLL_INTERVAL_SEC` | `30` | Опрос конфига из БД (сек) |
 
 ## Документация
 

@@ -87,5 +87,5 @@ async def send_message(room_id: str, html: str, text: str = "") -> bool:
         await room_send_with_retry(client, room_id, content)
         return True
     except Exception as e:
-        logger.error(f"❌ Не удалось отправить в {room_id} после {MAX_RETRIES} попыток: {e}")
+        logger.error("❌ Не удалось отправить в %s после %d попыток: %s", room_id, MAX_RETRIES, e)
         return False

@@ -145,8 +145,34 @@ class BotOpsAudit(Base):
     crud_action: Mapped[str | None] = mapped_column(String(32), nullable=True)
     details_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Dead-letter queue — уведомления, не доставленные в Matrix
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class PendingNotification(Base):
+    __tablename__ = "pending_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_redmine_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    issue_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    room_id: Mapped[str] = mapped_column(Text, nullable=False)
+    notification_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

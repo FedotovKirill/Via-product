@@ -308,8 +308,13 @@ async def onboarding_save(
         raw = form.get(f"secret_{secret_name}", "")
         is_masked = "•" in raw
         is_empty = not raw or not raw.strip()
-        logger.info("[DIAG] Save secret '%s': empty=%s, masked=%s, len=%d",
-                     secret_name, is_empty, is_masked, len(raw) if raw else 0)
+        logger.info(
+            "[DIAG] Save secret '%s': empty=%s, masked=%s, len=%d",
+            secret_name,
+            is_empty,
+            is_masked,
+            len(raw) if raw else 0,
+        )
         if is_empty:
             logger.warning("[DIAG] Save secret '%s': SKIPPING (empty)", secret_name)
             continue
@@ -404,18 +409,27 @@ async def onboarding_check(
             logger.error("[DIAG] Failed to decrypt secret %s: %s", row.name, e)
             pass
 
-    logger.info("[DIAG] DB secrets loaded: %s", {k: "***" if "KEY" in k or "TOKEN" in k else v for k, v in db_secrets.items()})
+    logger.info(
+        "[DIAG] DB secrets loaded: %s",
+        {k: "***" if "KEY" in k or "TOKEN" in k else v for k, v in db_secrets.items()},
+    )
 
     def _resolve(secret_name: str, form_value: str) -> str:
         """Если значение маскировано (•), берем из БД. Иначе берем из формы."""
         if "•" in form_value:
             resolved = db_secrets.get(secret_name, form_value)
-            logger.info("[DIAG] Resolved %s: form has dots → using DB value (len=%d)", secret_name, len(resolved) if resolved else 0)
+            logger.info(
+                "[DIAG] Resolved %s: form has dots → using DB value (len=%d)",
+                secret_name,
+                len(resolved) if resolved else 0,
+            )
             return resolved
         if not form_value or not form_value.strip():
             logger.warning("[DIAG] Resolved %s: form value is EMPTY", secret_name)
         else:
-            logger.info("[DIAG] Resolved %s: using form value (len=%d)", secret_name, len(form_value))
+            logger.info(
+                "[DIAG] Resolved %s: using form value (len=%d)", secret_name, len(form_value)
+            )
         return form_value
 
     # 2. Разрешаем значения
@@ -426,11 +440,23 @@ async def onboarding_check(
     matrix_tok = _resolve("MATRIX_ACCESS_TOKEN", secret_MATRIX_ACCESS_TOKEN)
 
     # ── Диагностика: resolved values ──
-    logger.info("[DIAG] Resolved Redmine URL: '%s' (len=%d)", redmine_url, len(redmine_url) if redmine_url else 0)
-    logger.info("[DIAG] Resolved Redmine Key: len=%d, is_empty=%s", len(redmine_key) if redmine_key else 0, not bool(redmine_key))
+    logger.info(
+        "[DIAG] Resolved Redmine URL: '%s' (len=%d)",
+        redmine_url,
+        len(redmine_url) if redmine_url else 0,
+    )
+    logger.info(
+        "[DIAG] Resolved Redmine Key: len=%d, is_empty=%s",
+        len(redmine_key) if redmine_key else 0,
+        not bool(redmine_key),
+    )
     logger.info("[DIAG] Resolved Matrix HS: '%s'", matrix_hs)
     logger.info("[DIAG] Resolved Matrix UID: '%s'", matrix_uid)
-    logger.info("[DIAG] Resolved Matrix Token: len=%d, is_empty=%s", len(matrix_tok) if matrix_tok else 0, not bool(matrix_tok))
+    logger.info(
+        "[DIAG] Resolved Matrix Token: len=%d, is_empty=%s",
+        len(matrix_tok) if matrix_tok else 0,
+        not bool(matrix_tok),
+    )
 
     # ── Предварительные проверки ──
     checks = []
@@ -442,6 +468,7 @@ async def onboarding_check(
         checks.append({"service": "redmine", "ok": False, "message": msg})
     else:
         from redmine_cache import clear_redmine_caches
+
         clear_redmine_caches()
 
         logger.info("[DIAG] Calling _check_redmine_access...")
@@ -453,7 +480,11 @@ async def onboarding_check(
 
     # Matrix check
     if not matrix_hs or not matrix_uid or not matrix_tok:
-        missing = [n for n, v in [("homeserver", matrix_hs), ("user_id", matrix_uid), ("token", matrix_tok)] if not v]
+        missing = [
+            n
+            for n, v in [("homeserver", matrix_hs), ("user_id", matrix_uid), ("token", matrix_tok)]
+            if not v
+        ]
         msg = f"Matrix: не заданы {', '.join(missing)}"
         logger.warning("[DIAG] %s", msg)
         checks.append({"service": "matrix", "ok": False, "message": msg})
