@@ -33,19 +33,19 @@
     </div>
 
     <fieldset class="settings-fieldset">
-      <legend class="settings-legend">Типы уведомлений</legend>
+      <legend class="settings-legend">Статусы</legend>
       <div class="radio-stack">
-        <label class="choice choice--radio"><input type="radio" name="notify_preset" value="all" {% if notify_preset == "all" %}checked{% endif %}/> Все уведомления</label>
-        <label class="choice choice--radio"><input type="radio" name="notify_preset" value="custom" {% if notify_preset == "custom" %}checked{% endif %}/> Выбрать уведомления</label>
+        <label class="choice choice--radio"><input type="radio" name="status_preset" value="default" {% if status_preset == "default" %}checked{% endif %}/> По умолчанию</label>
+        <label class="choice choice--radio"><input type="radio" name="status_preset" value="custom" {% if status_preset == "custom" %}checked{% endif %}/> Выбрать статусы</label>
       </div>
-      <div id="notify_custom_box" class="sub-panel sub-panel--notify">
+      <div id="status_custom_box" class="sub-panel sub-panel--notify">
         <span class="field-hint">Расширенный режим: выберите нужные события.</span>
         <div class="notify-events-grid">
-          {% for item in notify_catalog %}
-            <label class="choice"><input type="checkbox" name="notify_values" value="{{ item.key }}" {% if item.key in notify_selected %}checked{% endif %}/> {{ item.label }}</label>
+          {% for item in statuses_catalog %}
+            <label class="choice"><input type="checkbox" name="status_values" value="{{ item.key }}" data-default="{{ 'true' if item.is_default else 'false' }}" {% if item.key in status_selected %}checked{% endif %}/> {{ item.label }}</label>
           {% endfor %}
         </div>
-        <input type="hidden" name="notify_json" value="{{ notify_json }}"/>
+        <input type="hidden" name="status_json" value="{{ status_json }}"/>
       </div>
     </fieldset>
 

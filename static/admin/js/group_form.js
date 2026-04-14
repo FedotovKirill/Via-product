@@ -10,20 +10,54 @@
     window.history.replaceState({}, '', newUrl);
   }
 
-  /* --- Notify preset toggle --- */
-  var notifyRadios = Array.from(document.querySelectorAll('input[name="notify_preset"]'));
-  var notifyBox = document.getElementById('notify_custom_box_group');
+  /* --- Status preset toggle --- */
+  var statusRadios = Array.from(document.querySelectorAll('input[name="status_preset"]'));
+  var statusCheckboxes = Array.from(document.querySelectorAll('input[name="status_values"]'));
 
-  function refreshNotifyBox() {
-    var current = notifyRadios.find(function (r) { return r.checked; });
-    if (!notifyBox) return;
-    notifyBox.style.display = current && current.value === 'custom' ? 'block' : 'none';
+  function setStatusPreset(val) {
+    var target = statusRadios.find(function (r) { return r.value === val; });
+    if (!target || target.checked) return;
+    target.checked = true;
+    var evt = new Event('change', { bubbles: true });
+    target.dispatchEvent(evt);
   }
 
-  notifyRadios.forEach(function (r) {
-    r.addEventListener('change', function () { refreshNotifyBox(); refreshSummary(); });
+  function syncStatuses() {
+    var current = statusRadios.find(function (r) { return r.checked; });
+    if (!current) return;
+    if (current.value === 'default') {
+      statusCheckboxes.forEach(function (cb) {
+        cb.checked = cb.getAttribute('data-default') === 'true';
+      });
+    } else {
+      statusCheckboxes.forEach(function (cb) { cb.checked = false; });
+    }
+    refreshSummary();
+  }
+
+  function onStatusCheckboxChange() {
+    var current = statusRadios.find(function (r) { return r.checked; });
+    if (!current) return;
+    var defaultChecked = statusCheckboxes.filter(function (cb) { return cb.getAttribute('data-default') === 'true'; })
+      .every(function (cb) { return cb.checked; });
+    var nonDefaultChecked = statusCheckboxes.filter(function (cb) { return cb.getAttribute('data-default') !== 'true'; })
+      .every(function (cb) { return !cb.checked; });
+
+    if (current.value === 'default' && !defaultChecked) {
+      setStatusPreset('custom');
+    } else if (current.value === 'custom' && defaultChecked && nonDefaultChecked) {
+      setStatusPreset('default');
+    }
+    refreshSummary();
+  }
+
+  statusRadios.forEach(function (r) {
+    r.addEventListener('change', function () { syncStatuses(); });
   });
-  refreshNotifyBox();
+  statusCheckboxes.forEach(function (cb) {
+    cb.addEventListener('change', onStatusCheckboxChange);
+  });
+  syncStatuses();
 
   /* --- Version preset toggle --- */
   var versionRadios = Array.from(document.querySelectorAll('input[name="version_preset"]'));
@@ -41,7 +75,7 @@
   function syncVersions() {
     var current = versionRadios.find(function (r) { return r.checked; });
     var values = [];
-    if (current && current.value === 'all') {
+    if (current && current.value === 'default') {
       values = versionChoices.map(function (c) { return c.value.trim(); }).filter(Boolean);
     } else {
       values = versionChoices.filter(function (c) { return c.checked; }).map(function (c) { return c.value.trim(); }).filter(Boolean);
@@ -67,10 +101,10 @@
   }
 
   function selectedNotifyLabel() {
-    var active = document.querySelector('input[name="notify_preset"]:checked');
+    var active = document.querySelector('input[name="status_preset"]:checked');
     if (!active) return '—';
-    if (active.value === 'all') return 'Все уведомления';
-    var labels = Array.from(document.querySelectorAll('input[name="notify_values"]'))
+    if (active.value === 'default') return 'По умолчанию';
+    var labels = Array.from(document.querySelectorAll('input[name="status_values"]'))
       .filter(function (el) { return el.checked; })
       .map(function (el) { return String(el.parentElement && el.parentElement.textContent || '').trim(); })
       .filter(Boolean);
@@ -80,7 +114,7 @@
   function selectedVersionsLabel() {
     var active = document.querySelector('input[name="version_preset"]:checked');
     if (!active) return '—';
-    if (active.value === 'all') return 'Все версии';
+    if (active.value === 'default') return 'Все версии';
     var labels = Array.from(document.querySelectorAll('input[name="version_values"]'))
       .filter(function (el) { return el.checked; })
       .map(function (el) { return String(el.parentElement && el.parentElement.textContent || '').trim(); })
@@ -135,10 +169,7 @@
     if (evt !== 'change') el.addEventListener('change', refreshSummary);
   });
 
-  Array.from(document.querySelectorAll('input[name="notify_preset"]')).forEach(function (el) {
-    el.addEventListener('change', refreshSummary);
-  });
-  Array.from(document.querySelectorAll('input[name="notify_values"], input[name="version_values"], input[name="version_preset"]')).forEach(function (el) {
+  Array.from(document.querySelectorAll('input[name="status_preset"], input[name="status_values"], input[name="version_values"], input[name="version_preset"]')).forEach(function (el) {
     el.addEventListener('change', refreshSummary);
   });
 

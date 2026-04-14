@@ -56,27 +56,27 @@
       </article>
 
       <article class="card user-form-section">
-        <h2 class="section-title">Типы уведомлений</h2>
+        <h2 class="section-title">Статусы</h2>
         <div class="day-pills" role="group" aria-label="Режим уведомлений">
           <label class="day-pill form-pill">
-            <input type="radio" class="day-pill__input" name="notify_preset" value="all" {% if notify_preset == "all" %}checked{% endif %}/>
-            <span class="day-pill__text">Все уведомления</span>
+            <input type="radio" class="day-pill__input" name="status_preset" value="default" {% if status_preset == "default" %}checked{% endif %}/>
+            <span class="day-pill__text">По умолчанию</span>
           </label>
           <label class="day-pill form-pill">
-            <input type="radio" class="day-pill__input" name="notify_preset" value="custom" {% if notify_preset == "custom" %}checked{% endif %}/>
-            <span class="day-pill__text">Выбрать уведомления</span>
+            <input type="radio" class="day-pill__input" name="status_preset" value="custom" {% if status_preset == "custom" %}checked{% endif %}/>
+            <span class="day-pill__text">Выбрать статусы</span>
           </label>
         </div>
-        <div id="notify_custom_box" class="sub-panel">
+        <div id="status_custom_box" class="sub-panel">
           <div class="day-pills" role="group" aria-label="Выбор уведомлений">
-            {% for item in notify_catalog %}
+            {% for item in statuses_catalog %}
             <label class="day-pill form-pill">
-              <input type="checkbox" class="day-pill__input" name="notify_values" value="{{ item.key }}" {% if item.key in notify_selected %}checked{% endif %}/>
+              <input type="checkbox" class="day-pill__input" name="status_values" value="{{ item.key }}" data-default="{{ 'true' if item.is_default else 'false' }}" {% if item.key in status_selected %}checked{% endif %}/>
               <span class="day-pill__text">{{ item.label }}</span>
             </label>
             {% endfor %}
           </div>
-          <input type="hidden" name="notify_json" value="{{ notify_json }}"/>
+          <input type="hidden" name="status_json" value="{{ status_json }}"/>
         </div>
 
         <h3 class="section-subtitle">Версии</h3>
@@ -166,7 +166,7 @@
         <div class="summary-line"><span class="k">Группа</span><span class="v" id="summary_group">—</span></div>
         <div class="summary-line"><span class="k">Redmine ID</span><span class="v" id="summary_redmine_id">—</span></div>
         <div class="summary-line"><span class="k">Комната</span><span class="v" id="summary_room">—</span></div>
-        <div class="summary-line"><span class="k">Уведомления</span><span class="v" id="summary_notify">—</span></div>
+        <div class="summary-line"><span class="k">Статусы</span><span class="v" id="summary_notify">—</span></div>
         <div class="summary-line"><span class="k">Версии</span><span class="v" id="summary_versions">—</span></div>
         <div class="summary-line"><span class="k">Таймзона</span><span class="v" id="summary_timezone">—</span></div>
         <div class="summary-line"><span class="k">Часы</span><span class="v" id="summary_hours">—</span></div>

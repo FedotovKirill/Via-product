@@ -1,6 +1,6 @@
 (function () {
   /* --- Notify preset toggle --- */
-  initNotifyToggle('notify_custom_box');
+  initNotifyToggle('status_custom_box');
 
   /* --- Timezone select --- */
   var container = document.getElementById('timezone-data');

@@ -37,7 +37,8 @@ async def me_settings_get(
         return RedirectResponse(admin.DASHBOARD_PATH, status_code=303)
 
     redmine_id = getattr(user, "redmine_id", None)
-    notify_catalog, _versions_catalog = await admin._load_catalogs(session)
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    status_default_keys = [item["key"] for item in statuses_catalog]
     csrf_token, set_cookie = admin._ensure_csrf(request)
     if redmine_id is None:
         resp = admin.templates.TemplateResponse(
@@ -45,10 +46,10 @@ async def me_settings_get(
             "panel/my_settings.html",
             {
                 "room": None,
-                "notify_json": '["all"]',
-                "notify_preset": "all",
-                "notify_selected": ["all"],
-                "notify_catalog": notify_catalog,
+                "status_json": '["all"]',
+                "status_preset": "default",
+                "status_selected": status_default_keys,
+                "statuses_catalog": statuses_catalog,
                 "work_hours": "",
                 "work_hours_from": "",
                 "work_hours_to": "",
@@ -84,21 +85,25 @@ async def me_settings_get(
     if not bot_user:
         raise HTTPException(404, "BotUser не найден")
     notify_selected = [str(x).strip() for x in (bot_user.notify or ["all"]) if str(x).strip()]
-    notify_keys = {item["key"] for item in notify_catalog}
-    if "all" not in notify_selected:
-        notify_selected = [k for k in notify_selected if k in notify_keys]
+    status_keys = {item["key"] for item in statuses_catalog}
+    status_default_keys = [item["key"] for item in statuses_catalog]
+    preset = admin._status_preset(bot_user.notify)
+    if preset == "default":
+        status_selected = status_default_keys
+    else:
+        status_selected = [k for k in notify_selected if k in status_keys]
 
     resp = admin.templates.TemplateResponse(
         request,
         "panel/my_settings.html",
         {
             "room": bot_user.room,
-            "notify_json": json.dumps(bot_user.notify, ensure_ascii=False)
+            "status_json": json.dumps(bot_user.notify, ensure_ascii=False)
             if bot_user.notify is not None
             else '["all"]',
-            "notify_preset": admin._notify_preset(bot_user.notify),
-            "notify_selected": notify_selected,
-            "notify_catalog": notify_catalog,
+            "status_preset": preset,
+            "status_selected": status_selected,
+            "statuses_catalog": statuses_catalog,
             "work_hours": bot_user.work_hours or "",
             "work_hours_from": admin._parse_work_hours_range(bot_user.work_hours or "")[0],
             "work_hours_to": admin._parse_work_hours_range(bot_user.work_hours or "")[1],
@@ -132,9 +137,9 @@ async def me_settings_get(
 @router.post("/me/settings")
 async def me_settings_post(
     request: Request,
-    notify_json: Annotated[str, Form()] = "",
-    notify_preset: Annotated[str, Form()] = "all",
-    notify_values: Annotated[list[str], Form()] = [],
+    status_json: Annotated[str, Form()] = "",
+    status_preset: Annotated[str, Form()] = "all",
+    status_values: Annotated[list[str], Form()] = [],
     timezone_name: Annotated[str, Form()] = "",
     work_hours: Annotated[str, Form()] = "",
     work_hours_from: Annotated[str, Form()] = "",
@@ -146,8 +151,8 @@ async def me_settings_post(
     session: AsyncSession = Depends(get_session),
 ):
     admin = _admin()
-    notify_catalog, _versions_catalog = await admin._load_catalogs(session)
-    notify_allowed = [item["key"] for item in notify_catalog]
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    status_allowed = [item["key"] for item in statuses_catalog]
     admin._verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user:
@@ -167,16 +172,16 @@ async def me_settings_post(
     if not bot_user:
         raise HTTPException(404, "BotUser не найден")
 
-    if notify_preset == "all":
+    if status_preset == "default":
         bot_user.notify = ["all"]
-    elif notify_preset == "new_only":
+    elif status_preset == "new_only":
         bot_user.notify = ["new"]
-    elif notify_preset == "overdue_only":
+    elif status_preset == "overdue_only":
         bot_user.notify = ["overdue"]
-    elif notify_preset == "custom":
-        bot_user.notify = admin._normalize_notify(notify_values, notify_allowed)
+    elif status_preset == "custom":
+        bot_user.notify = admin._normalize_notify(status_values, status_allowed)
     else:
-        bot_user.notify = admin._parse_notify(notify_json)
+        bot_user.notify = admin._parse_notify(status_json)
     bot_user.timezone = (timezone_name or "").strip() or None
     if work_hours_from and work_hours_to:
         bot_user.work_hours = f"{work_hours_from.strip()}-{work_hours_to.strip()}"

@@ -4,208 +4,242 @@
 {% block content %}
 {{ page_head("Настройки") }}
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
 <div class="page-settings page-settings--wide">
+  <!-- Вкладки -->
+  <div class="settings-tabs" id="settings-tabs">
+    <button type="button" class="tab-btn active" data-tab="general">Общие настройки</button>
+    <button type="button" class="tab-btn" data-tab="dictionary">Справочник</button>
+  </div>
+
   <form class="form form--settings" method="post" action="/onboarding/save" id="settings-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
-    <input type="hidden" id="catalog_notify_json" name="catalog_notify_json" value='{{ notify_catalog|tojson }}'/>
     <input type="hidden" id="catalog_versions_json" name="catalog_versions_json" value='{{ versions_catalog|tojson }}'/>
 
-    <div class="section-header section-header--action">
-      <h2>Параметры сервиса</h2>
-      <div class="head-line"></div>
-      <div class="section-actions">
-          <button type="submit" class="btn btn-primary">Сохранить</button>
-          <button type="button" id="check-access-btn" class="btn btn-secondary">Проверить доступ</button>
-      </div>
-    </div>
-    <div class="service-bubbles">
-      <section class="service-bubble">
-        <div class="card-title">Redmine</div>
-        <div class="field">
-          <label for="secret_REDMINE_URL">Адрес Redmine</label>
-          <input id="secret_REDMINE_URL" name="secret_REDMINE_URL" type="text"
-                 value="{{ secrets_masked.get('REDMINE_URL', '') }}"
-                 placeholder="https://redmine.company.local"
-                 autocomplete="url"/>
+    <!-- Вкладка: Общие настройки -->
+    <div class="tab-content active" id="tab-general">
+      <div class="section-header section-header--action">
+        <h2>Параметры сервиса</h2>
+        <div class="head-line"></div>
+        <div class="section-actions">
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+            <button type="button" id="check-access-btn" class="btn btn-secondary">Проверить доступ</button>
         </div>
+      </div>
+      <div class="service-bubbles">
+        <section class="service-bubble">
+          <div class="card-title">Redmine</div>
+          <div class="field">
+            <label for="secret_REDMINE_URL">Адрес Redmine</label>
+            <input id="secret_REDMINE_URL" name="secret_REDMINE_URL" type="text"
+                   value="{{ secrets_masked.get('REDMINE_URL', '') }}"
+                   placeholder="https://redmine.company.local"
+                   autocomplete="url"/>
+          </div>
+          <div class="field">
+            <label for="secret_REDMINE_API_KEY">API-ключ Redmine</label>
+            <div class="input-with-toggle">
+              <input id="secret_REDMINE_API_KEY" name="secret_REDMINE_API_KEY" type="password"
+                     value="{{ secrets_masked.get('REDMINE_API_KEY', '') }}"
+                     data-real-value="{{ secrets_raw.get('REDMINE_API_KEY', '') }}"
+                     data-masked-value="{{ secrets_masked.get('REDMINE_API_KEY', '') }}"
+                     placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                     autocomplete="off"/>
+              <button type="button" class="toggle-visibility" data-target="secret_REDMINE_API_KEY" aria-label="Показать/скрыть">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+        </section>
+        <section class="service-bubble">
+          <div class="card-title">Matrix</div>
+          <div class="field">
+            <label for="secret_MATRIX_HOMESERVER">Адрес Matrix</label>
+            <input id="secret_MATRIX_HOMESERVER" name="secret_MATRIX_HOMESERVER" type="text"
+                   value="{{ secrets_masked.get('MATRIX_HOMESERVER', '') }}"
+                   placeholder="https://matrix.company.local"
+                   autocomplete="url"/>
+          </div>
+          <div class="field">
+            <label for="secret_MATRIX_USER_ID">Имя учётной записи</label>
+            <input id="secret_MATRIX_USER_ID" name="secret_MATRIX_USER_ID" type="text"
+                   value="{{ secrets_masked.get('MATRIX_USER_ID', '') }}"
+                   placeholder="@login:ваш.домен" autocomplete="username"/>
+          </div>
+          <div class="field">
+            <label for="secret_MATRIX_ACCESS_TOKEN">Токен</label>
+            <div class="input-with-toggle">
+              <input id="secret_MATRIX_ACCESS_TOKEN" name="secret_MATRIX_ACCESS_TOKEN" type="password"
+                     value="{{ secrets_masked.get('MATRIX_ACCESS_TOKEN', '') }}"
+                     data-real-value="{{ secrets_raw.get('MATRIX_ACCESS_TOKEN', '') }}"
+                     data-masked-value="{{ secrets_masked.get('MATRIX_ACCESS_TOKEN', '') }}"
+                     placeholder="syt_xxxxxxxxxxxxxxxxxxx" autocomplete="off"/>
+              <button type="button" class="toggle-visibility" data-target="secret_MATRIX_ACCESS_TOKEN" aria-label="Показать/скрыть">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <p id="check-access-status" class="muted form-status" aria-live="polite"></p>
+
+      {% if saved == "connections" %}
+      <p class="muted form-status">Подключения сохранены.</p>
+      {% endif %}
+
+      <div class="section-header section-header--action">
+        <h2>База данных сервиса</h2>
+        <div class="head-line"></div>
+        <div class="section-actions">
+          <button class="btn btn-secondary" type="button" id="regenerate-db-credentials">Сгенерировать новые</button>
+        </div>
+      </div>
+      <section class="service-bubble">
+        <div class="db-grid">
+          <div class="field">
+            <label for="db_user">Пользователь БД</label>
+            <input id="db_user" type="text" readonly value="{{ db_config.postgres_user }}"/>
+          </div>
+          <div class="field">
+            <label for="db_name">Имя базы данных</label>
+            <input id="db_name" type="text" readonly value="{{ db_config.postgres_db }}"/>
+          </div>
+          <div class="field">
+            <label for="db_password">Пароль БД</label>
+            <div class="input-with-toggle">
+              <input id="db_password" type="password" readonly value="{{ db_config.postgres_password }}"/>
+              <button type="button" class="toggle-visibility" data-target="db_password" aria-label="Показать/скрыть">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="master_key">Мастер-ключ</label>
+            <div class="input-with-toggle">
+              <input id="master_key" type="password" readonly value="{{ db_config.app_master_key }}"/>
+              <button type="button" class="toggle-visibility" data-target="master_key" aria-label="Показать/скрыть">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <p id="db-regenerate-status" class="muted form-status form-status--db" aria-live="polite"></p>
+      </section>
+
+      <div class="section-header">
+        <h2>Таймзона сервиса</h2>
+      </div>
+      <section class="service-bubble service-timezone-block">
         <div class="field">
-          <label for="secret_REDMINE_API_KEY">API-ключ Redmine</label>
-          <div class="input-with-toggle">
-            <input id="secret_REDMINE_API_KEY" name="secret_REDMINE_API_KEY" type="password"
-                   value="{{ secrets_masked.get('REDMINE_API_KEY', '') }}"
-                   data-real-value="{{ secrets_raw.get('REDMINE_API_KEY', '') }}"
-                   data-masked-value="{{ secrets_masked.get('REDMINE_API_KEY', '') }}"
-                   placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                   autocomplete="off"/>
-            <button type="button" class="toggle-visibility" data-target="secret_REDMINE_API_KEY" aria-label="Показать/скрыть">
-              <i class="fa-solid fa-eye"></i>
-            </button>
+          <label for="service_timezone">Таймзона сервиса</label>
+          <select id="service_timezone" name="service_timezone">
+            {% if service_timezone and service_timezone not in timezone_all_options %}
+            <option value="{{ service_timezone }}" selected>{{ timezone_labels.get(service_timezone, service_timezone) }}</option>
+            {% endif %}
+            {% for tz_name in timezone_all_options %}
+            <option value="{{ tz_name }}" {% if tz_name == service_timezone %}selected{% endif %}>{{ timezone_labels.get(tz_name, tz_name) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </section>
+    </div>
+
+    <!-- Вкладка: Справочник -->
+    <div class="tab-content" id="tab-dictionary">
+      <div class="section-header section-header--action">
+        <h2>Парсинг пользователей</h2>
+        <div class="head-line"></div>
+        <div class="section-actions">
+          <button type="button" class="btn btn-primary" id="parse-start">Начать поиск</button>
+        </div>
+      </div>
+      <section class="service-bubble" id="parse-bubble">
+        <p class="muted" id="parse-ready-status"></p>
+        <div class="field">
+          <label for="parse-target-url">URL группы Redmine</label>
+          <input id="parse-target-url" type="url" placeholder="https://redmine.example.com/groups/5"/>
+        </div>
+        <!-- Шаг 2: прогресс -->
+        <div id="parse-step-progress" style="display:none;">
+          <p class="muted" id="parse-progress-text">Подключение к Redmine...</p>
+          <div class="progress-bar"><div class="progress-bar-fill" id="parse-progress-fill"></div></div>
+        </div>
+        <!-- Шаг 3: результаты -->
+        <div id="parse-step-results" style="display:none;">
+          <div class="parse-summary" id="parse-summary"></div>
+          <div class="parse-controls">
+            <label class="checkbox-label">
+              <input type="checkbox" id="parse-select-all" checked/>
+              <span>Все пользователи</span>
+            </label>
+            <span class="muted" id="parse-selected-count"></span>
+          </div>
+          <div class="table-wrap" style="max-height:400px;overflow-y:auto;">
+            <table class="parse-table">
+              <thead>
+                <tr>
+                  <th style="width:40px;"><input type="checkbox" id="parse-select-all-header" checked/></th>
+                  <th>ФИО</th>
+                  <th>Redmine ID</th>
+                  <th>Matrix</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="parse-results-body"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+            <button type="button" class="btn btn-primary" id="parse-create">Создать выбранных</button>
           </div>
         </div>
       </section>
-      <section class="service-bubble">
-        <div class="card-title">Matrix</div>
-        <div class="field">
-          <label for="secret_MATRIX_HOMESERVER">Адрес Matrix</label>
-          <input id="secret_MATRIX_HOMESERVER" name="secret_MATRIX_HOMESERVER" type="text"
-                 value="{{ secrets_masked.get('MATRIX_HOMESERVER', '') }}"
-                 placeholder="https://matrix.company.local"
-                 autocomplete="url"/>
+
+      <div class="section-header section-header--action">
+        <h2>Справочник</h2>
+        <div class="head-line"></div>
+        <div class="section-actions">
+          <button type="button" class="btn btn-secondary" id="sync-statuses-btn">Обновить из Redmine</button>
         </div>
-        <div class="field">
-          <label for="secret_MATRIX_USER_ID">Имя учётной записи</label>
-          <input id="secret_MATRIX_USER_ID" name="secret_MATRIX_USER_ID" type="text"
-                 value="{{ secrets_masked.get('MATRIX_USER_ID', '') }}"
-                 placeholder="@login:ваш.домен" autocomplete="username"/>
-        </div>
-        <div class="field">
-          <label for="secret_MATRIX_ACCESS_TOKEN">Токен</label>
-          <div class="input-with-toggle">
-            <input id="secret_MATRIX_ACCESS_TOKEN" name="secret_MATRIX_ACCESS_TOKEN" type="password"
-                   value="{{ secrets_masked.get('MATRIX_ACCESS_TOKEN', '') }}"
-                   data-real-value="{{ secrets_raw.get('MATRIX_ACCESS_TOKEN', '') }}"
-                   data-masked-value="{{ secrets_masked.get('MATRIX_ACCESS_TOKEN', '') }}"
-                   placeholder="syt_xxxxxxxxxxxxxxxxxxx" autocomplete="off"/>
-            <button type="button" class="toggle-visibility" data-target="secret_MATRIX_ACCESS_TOKEN" aria-label="Показать/скрыть">
-              <i class="fa-solid fa-eye"></i>
-            </button>
+      </div>
+      <p id="catalog-save-status" class="muted form-status form-status--catalog" aria-live="polite"></p>
+      <div class="service-bubble service-bubble--statuses">
+        <div class="card-title">Статусы</div>
+        <div class="statuses-manager">
+          <div class="statuses-col statuses-all-col">
+            <div class="statuses-col-label">Все статусы</div>
+            <div class="statuses-items statuses-dropzone" id="statuses-all-items"></div>
+          </div>
+          <div class="statuses-col statuses-default-col">
+            <div class="statuses-col-label">
+              По умолчанию
+              <span class="trash-count" id="statuses-default-count"></span>
+            </div>
+            <div class="statuses-items statuses-dropzone" id="statuses-default-items"></div>
+          </div>
+          <div class="statuses-col statuses-trash-col">
+            <div class="statuses-col-label">
+              <i class="fa-solid fa-trash-can"></i> Корзина
+              <span class="trash-count" id="statuses-trash-count"></span>
+            </div>
+            <div class="statuses-items statuses-dropzone" id="statuses-trash-items"></div>
           </div>
         </div>
-      </section>
-    </div>
-
-    <p id="check-access-status" class="muted form-status" aria-live="polite"></p>
-
-    {% if saved == "connections" %}
-    <p class="muted form-status">Подключения сохранены.</p>
-    {% endif %}
-
-    <div class="section-header section-header--action">
-      <h2>Парсинг пользователей</h2>
-      <div class="head-line"></div>
-      <div class="section-actions">
-        <button type="button" class="btn btn-primary" id="parse-start">Начать поиск</button>
-      </div>
-    </div>
-    <section class="service-bubble" id="parse-bubble">
-      <p class="muted" id="parse-ready-status"></p>
-      <div class="field">
-        <label for="parse-target-url">URL группы Redmine</label>
-        <input id="parse-target-url" type="url" placeholder="https://redmine.example.com/groups/5"/>
-      </div>
-      <!-- Шаг 2: прогресс -->
-      <div id="parse-step-progress" style="display:none;">
-        <p class="muted" id="parse-progress-text">Подключение к Redmine...</p>
-        <div class="progress-bar"><div class="progress-bar-fill" id="parse-progress-fill"></div></div>
-      </div>
-      <!-- Шаг 3: результаты -->
-      <div id="parse-step-results" style="display:none;">
-        <div class="parse-summary" id="parse-summary"></div>
-        <div class="parse-controls">
-          <label class="checkbox-label">
-            <input type="checkbox" id="parse-select-all" checked/>
-            <span>Все пользователи</span>
-          </label>
-          <span class="muted" id="parse-selected-count"></span>
-        </div>
-        <div class="table-wrap" style="max-height:400px;overflow-y:auto;">
-          <table class="parse-table">
-            <thead>
-              <tr>
-                <th style="width:40px;"><input type="checkbox" id="parse-select-all-header" checked/></th>
-                <th>ФИО</th>
-                <th>Redmine ID</th>
-                <th>Matrix</th>
-                <th>Статус</th>
-              </tr>
-            </thead>
-            <tbody id="parse-results-body"></tbody>
-          </table>
-        </div>
-        <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
-          <button type="button" class="btn btn-primary" id="parse-create">Создать выбранных</button>
-        </div>
-      </div>
-    </section>
-
-    <div class="section-header section-header--action">
-      <h2>База данных сервиса</h2>
-      <div class="head-line"></div>
-      <div class="section-actions">
-        <button class="btn btn-secondary" type="button" id="regenerate-db-credentials">Сгенерировать новые</button>
-      </div>
-    </div>
-    <section class="service-bubble">
-      <div class="db-grid">
-        <div class="field">
-          <label for="db_user">Пользователь БД</label>
-          <input id="db_user" type="text" readonly value="{{ db_config.postgres_user }}"/>
-        </div>
-        <div class="field">
-          <label for="db_name">Имя базы данных</label>
-          <input id="db_name" type="text" readonly value="{{ db_config.postgres_db }}"/>
-        </div>
-        <div class="field">
-          <label for="db_password">Пароль БД</label>
-          <div class="input-with-toggle">
-            <input id="db_password" type="password" readonly value="{{ db_config.postgres_password }}"/>
-            <button type="button" class="toggle-visibility" data-target="db_password" aria-label="Показать/скрыть">
-              <i class="fa-solid fa-eye"></i>
-            </button>
-          </div>
-        </div>
-        <div class="field">
-          <label for="master_key">Мастер-ключ</label>
-          <div class="input-with-toggle">
-            <input id="master_key" type="password" readonly value="{{ db_config.app_master_key }}"/>
-            <button type="button" class="toggle-visibility" data-target="master_key" aria-label="Показать/скрыть">
-              <i class="fa-solid fa-eye"></i>
-            </button>
-          </div>
-        </div>
-      </div>
-      <p id="db-regenerate-status" class="muted form-status form-status--db" aria-live="polite"></p>
-    </section>
-
-    <div class="section-header">
-      <h2>Справочник</h2>
-    </div>
-    <p id="catalog-save-status" class="muted form-status form-status--catalog" aria-live="polite"></p>
-    <div class="catalog-grid">
-      <section class="service-bubble">
-        <div class="card-title">Уведомления</div>
-        <div class="catalog-list" id="notify-list"></div>
         <div class="catalog-add">
-          <input id="notify-add-input" type="text" placeholder="Новое уведомление"/>
-          <button type="button" class="btn btn-ghost" id="notify-add">Добавить</button>
+          <input id="status-add-name" type="text" placeholder="Название статуса" style="flex:1;"/>
+          <button type="button" class="btn btn-ghost" id="status-add-btn">Добавить</button>
         </div>
-      </section>
+      </div>
       <section class="service-bubble">
         <div class="card-title">Версии</div>
-        <div class="catalog-list" id="versions-list"></div>
-        <div class="catalog-add">
-          <input id="versions-add-input" type="text" placeholder="Новая версия"/>
-          <button type="button" class="btn btn-ghost" id="versions-add">Добавить</button>
-        </div>
+        <p class="muted">Скоро: автоматический импорт версий из Redmine</p>
+      </section>
+      <section class="service-bubble">
+        <div class="card-title">Приоритет</div>
+        <p class="muted">Скоро: управление приоритетами задач</p>
       </section>
     </div>
 
-    <div class="section-header">
-      <h2>Таймзона сервиса</h2>
-    </div>
-    <section class="service-bubble service-timezone-block">
-      <div class="field">
-        <label for="service_timezone">Таймзона сервиса</label>
-        <select id="service_timezone" name="service_timezone">
-          {% if service_timezone and service_timezone not in timezone_all_options %}
-          <option value="{{ service_timezone }}" selected>{{ timezone_labels.get(service_timezone, service_timezone) }}</option>
-          {% endif %}
-          {% for tz_name in timezone_all_options %}
-          <option value="{{ tz_name }}" {% if tz_name == service_timezone %}selected{% endif %}>{{ timezone_labels.get(tz_name, tz_name) }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </section>
   </form>
 </div>
 
@@ -214,4 +248,6 @@
 <script src="/static/admin/js/catalog_editor.js?v={{ asset_version() }}"></script>
 <script src="/static/admin/js/onboarding.js?v={{ asset_version() }}"></script>
 <script src="/static/admin/js/user_parse.js?v={{ asset_version() }}"></script>
+<script src="/static/admin/js/catalog_statuses.js?v={{ asset_version() }}"></script>
+<script src="/static/admin/js/settings_tabs.js?v={{ asset_version() }}"></script>
 {% endblock %}

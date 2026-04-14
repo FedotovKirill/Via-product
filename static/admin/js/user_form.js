@@ -130,16 +130,16 @@
       .filter(Boolean);
   }
   function selectedNotifyLabel() {
-    var active = document.querySelector('input[name="notify_preset"]:checked');
+    var active = document.querySelector('input[name="status_preset"]:checked');
     if (!active) return '—';
-    if (active.value === 'all') return 'Все уведомления';
-    var labels = checkedLabels('input[name="notify_values"]');
+    if (active.value === 'default') return 'По умолчанию';
+    var labels = checkedLabels('input[name="status_values"]');
     return labels.length ? labels.join(', ') : '—';
   }
   function selectedVersionsLabel() {
     var active = document.querySelector('input[name="version_preset"]:checked');
     if (!active) return '—';
-    if (active.value === 'all') return 'Все версии';
+    if (active.value === 'default') return 'Все версии';
     var labels = checkedLabels('input[name="version_values"]');
     return labels.length ? labels.join(', ') : '—';
   }
@@ -175,19 +175,61 @@
     setSummary('summary_dnd', dndLabel());
   }
 
-  /* --- Notify toggle --- */
+  /* --- Statuses toggle --- */
   (function () {
-    var radios = Array.from(document.querySelectorAll('input[name="notify_preset"]'));
-    var box = document.getElementById('notify_custom_box');
-    function refresh() {
-      var current = radios.find(function (r) { return r.checked; });
-      if (!box) return;
-      box.style.display = current && current.value === 'custom' ? 'block' : 'none';
+    var radios = Array.from(document.querySelectorAll('input[name="status_preset"]'));
+    var box = document.getElementById('status_custom_box');
+    var checkboxes = Array.from(document.querySelectorAll('input[name="status_values"]'));
+
+    function setPreset(val) {
+      var target = radios.find(function (r) { return r.value === val; });
+      if (!target || target.checked) return;
+      target.checked = true;
+      // Триггерим change чтобы обновить UI
+      var evt = new Event('change', { bubbles: true });
+      target.dispatchEvent(evt);
     }
+
+    function syncStatuses() {
+      var current = radios.find(function (r) { return r.checked; });
+      if (!current) return;
+      // Панель всегда видна, меняем только чекбоксы
+      if (current.value === 'default') {
+        // Выбрать только те, что с data-default="true"
+        checkboxes.forEach(function (cb) {
+          cb.checked = cb.getAttribute('data-default') === 'true';
+        });
+      } else {
+        checkboxes.forEach(function (cb) { cb.checked = false; });
+      }
+      refreshSummary();
+    }
+
+    function onCheckboxChange() {
+      var current = radios.find(function (r) { return r.checked; });
+      if (!current) return;
+      // Проверяем все ли default-статусы выбраны
+      var defaultChecked = checkboxes.filter(function (cb) { return cb.getAttribute('data-default') === 'true'; })
+        .every(function (cb) { return cb.checked; });
+      var nonDefaultChecked = checkboxes.filter(function (cb) { return cb.getAttribute('data-default') !== 'true'; })
+        .every(function (cb) { return !cb.checked; });
+
+      if (current.value === 'default' && !defaultChecked) {
+        setPreset('custom');
+      } else if (current.value === 'custom' && defaultChecked && nonDefaultChecked) {
+        // Все выбраны (и default и non-default) → переключить на default
+        setPreset('default');
+      }
+      refreshSummary();
+    }
+
     radios.forEach(function (r) {
-      r.addEventListener('change', function () { refresh(); refreshSummary(); });
+      r.addEventListener('change', function () { syncStatuses(); });
     });
-    refresh();
+    checkboxes.forEach(function (cb) {
+      cb.addEventListener('change', onCheckboxChange);
+    });
+    syncStatuses();
   })();
 
   /* --- Versions toggle --- */
@@ -206,7 +248,7 @@
     function syncVersions() {
       var current = radios.find(function (r) { return r.checked; });
       var values = [];
-      if (current && current.value === 'all') {
+      if (current && current.value === 'default') {
         values = choices.map(function (c) { return c.value.trim(); }).filter(Boolean);
       } else {
         values = choices.filter(function (c) { return c.checked; }).map(function (c) { return c.value.trim(); }).filter(Boolean);
@@ -237,7 +279,7 @@
       el.addEventListener('change', refreshSummary);
     }
   });
-  Array.from(document.querySelectorAll('input[name="notify_values"], input[name="version_values"], input[name="version_preset"]')).forEach(function (el) {
+  Array.from(document.querySelectorAll('input[name="status_values"], input[name="status_preset"], input[name="version_values"], input[name="version_preset"]')).forEach(function (el) {
     el.addEventListener('change', refreshSummary);
   });
   refreshSummary();

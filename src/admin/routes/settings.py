@@ -257,7 +257,8 @@ async def onboarding_page(request: Request, session: AsyncSession = Depends(get_
         except Exception:
             secrets_masked[row.name] = "••••••••"
 
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
+    _notify_catalog, versions_catalog = await admin._load_catalogs(session)
+    statuses_catalog = await admin._load_statuses_catalog(session)
     csrf_token, _ = admin._ensure_csrf(request)
     error = request.query_params.get("error", "")
     db_config = _load_db_config_from_env()
@@ -276,7 +277,7 @@ async def onboarding_page(request: Request, session: AsyncSession = Depends(get_
         {
             "secrets_raw": secrets_raw,
             "secrets_masked": secrets_masked,
-            "notify_catalog": notify_catalog,
+            "statuses_catalog": statuses_catalog,
             "versions_catalog": versions_catalog,
             "csrf_token": csrf_token,
             "error": error,
@@ -339,11 +340,10 @@ async def onboarding_save(
 async def catalog_save(
     request: Request,
     csrf_token: Annotated[str, Form()] = "",
-    catalog_notify_json: Annotated[str, Form()] = "[]",
     catalog_versions_json: Annotated[str, Form()] = "[]",
     session: AsyncSession = Depends(get_session),
 ):
-    """Сохраняет справочники (уведомления и версии) как секреты."""
+    """Сохраняет справочники (версии) как секреты."""
     admin = _admin()
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -352,7 +352,6 @@ async def catalog_save(
     admin._verify_csrf(request, csrf_token)
 
     for name, json_value in [
-        ("__catalog_notify", catalog_notify_json),
         ("__catalog_versions", catalog_versions_json),
     ]:
         enc = encrypt_secret(json_value, load_master_key())

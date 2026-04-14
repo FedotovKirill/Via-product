@@ -89,6 +89,7 @@ NOTIFY_TYPE_KEYS: list[str] = []
 from admin.db_config import router as db_config_router  # noqa: E402
 from admin.routes.app_users import router as app_users_router  # noqa: E402
 from admin.routes.auth import router as auth_router  # noqa: E402
+from admin.routes.catalog import router as catalog_router  # noqa: E402
 from admin.routes.dashboard import router as dashboard_router  # noqa: E402
 from admin.routes.events import router as events_router  # noqa: E402
 from admin.routes.groups import router as groups_router  # noqa: E402
@@ -116,6 +117,7 @@ app.include_router(routes_mgmt_router)
 app.include_router(groups_router)
 app.include_router(users_router)
 app.include_router(user_import_router)
+app.include_router(catalog_router)
 app.include_router(db_config_router)
 
 # ── Jinja2 globals ───────────────────────────────────────────────────────────

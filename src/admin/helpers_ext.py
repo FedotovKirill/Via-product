@@ -88,7 +88,7 @@ __all__ = [
     "_normalize_versions",
     "_normalize_versions_catalog",
     "_normalized_group_filter_key",
-    "_notify_preset",
+    "_status_preset",
     "_ops_flash_message",
     "_parse_catalog_payload",
     "_parse_json_string_list",
@@ -344,6 +344,28 @@ async def _load_catalogs(session: AsyncSession) -> tuple[list[dict[str, str]], l
     else:
         versions_catalog = _default_versions_catalog()
     return notify_catalog, versions_catalog
+
+
+async def _load_statuses_catalog(session: AsyncSession) -> list[dict[str, str]]:
+    """Загружает активные статусы из таблицы RedmineStatus."""
+    from sqlalchemy import select
+    from database.models import RedmineStatus
+
+    result = await session.execute(
+        select(RedmineStatus)
+        .where(RedmineStatus.is_active == True)
+        .order_by(RedmineStatus.id)
+    )
+    rows = result.scalars().all()
+    return [
+        {
+            "id": str(r.redmine_status_id),
+            "key": str(r.redmine_status_id),
+            "label": r.name,
+            "is_default": r.is_default,
+        }
+        for r in rows
+    ]
 
 
 def _parse_catalog_payload(
@@ -788,10 +810,10 @@ def _normalize_notify(values: list[str] | None, allowed_keys: list[str] | None =
     return allowed or ["all"]
 
 
-def _notify_preset(notify: list | None) -> str:
+def _status_preset(notify: list | None) -> str:
     values = [str(x).strip() for x in (notify or []) if str(x).strip()]
     if not values or "all" in values:
-        return "all"
+        return "default"
     return "custom"
 
 

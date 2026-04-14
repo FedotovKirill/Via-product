@@ -124,8 +124,11 @@ async def users_new(
         .scalars()
         .all()
     )
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
     matrix_domain = await admin._get_matrix_domain_from_db(session)
+    # По умолчанию — только статусы с is_default=True
+    status_default_keys = [item["key"] for item in statuses_catalog if item.get("is_default")]
     return admin.templates.TemplateResponse(
         request,
         "panel/user_form.html",
@@ -134,16 +137,16 @@ async def users_new(
             "u": None,
             "room_localpart": "",
             "matrix_domain": matrix_domain,
-            "notify_json": '["all"]',
-            "notify_preset": "all",
-            "notify_selected": ["all"],
+            "status_json": json.dumps(status_default_keys, ensure_ascii=False),
+            "status_preset": "default",
+            "status_selected": status_default_keys,
             "groups": admin._groups_assignable(groups_rows),
             "group_unassigned_display": admin.GROUP_UNASSIGNED_DISPLAY,
             "bot_tz": admin.os.getenv("BOT_TIMEZONE", "Europe/Moscow"),
             "timezone_top_options": admin._top_timezone_options(),
             "timezone_all_options": admin._standard_timezone_options(),
             "timezone_labels": admin._timezone_labels(admin._standard_timezone_options()),
-            "notify_catalog": notify_catalog,
+            "statuses_catalog": statuses_catalog,
             "versions_catalog": versions_catalog,
             "selected_version_keys": [],
             "version_preset": "all",
@@ -158,9 +161,9 @@ async def users_create(
     room: Annotated[str, Form()],
     display_name: Annotated[str, Form()] = "",
     group_id: Annotated[str, Form()] = "",
-    notify_json: Annotated[str, Form()] = "",
-    notify_preset: Annotated[str, Form()] = "all",
-    notify_values: Annotated[list[str], Form()] = [],
+    status_json: Annotated[str, Form()] = "",
+    status_preset: Annotated[str, Form()] = "all",
+    status_values: Annotated[list[str], Form()] = [],
     initial_version_keys: Annotated[str, Form()] = "",
     version_keys_json: Annotated[str, Form()] = "",
     version_preset: Annotated[str, Form()] = "all",
@@ -176,8 +179,9 @@ async def users_create(
     session: AsyncSession = Depends(get_session),
 ):
     admin = _admin()
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
-    notify_allowed = [item["key"] for item in notify_catalog]
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
+    status_allowed = [item["key"] for item in statuses_catalog]
     admin._verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -192,16 +196,16 @@ async def users_create(
         wd = sorted({int(v) for v in work_days_values if str(v).isdigit()})
     else:
         wd = admin._parse_work_days(work_days_json)
-    if notify_preset == "all":
+    if status_preset == "all":
         notify = ["all"]
-    elif notify_preset == "new_only":
+    elif status_preset == "new_only":
         notify = ["new"]
-    elif notify_preset == "overdue_only":
+    elif status_preset == "overdue_only":
         notify = ["overdue"]
-    elif notify_preset == "custom":
-        notify = admin._normalize_notify(notify_values, notify_allowed)
+    elif status_preset == "custom":
+        notify = admin._normalize_notify(status_values, status_allowed)
     else:
-        notify = admin._parse_notify(notify_json)
+        notify = admin._parse_notify(status_json)
     full_room = await admin._build_room_id_async(room.strip(), session)
     row = BotUser(
         redmine_id=redmine_id,
@@ -519,12 +523,17 @@ async def users_edit(
         .scalars()
         .all()
     )
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
     matrix_domain = await admin._get_matrix_domain_from_db(session)
-    notify_keys = {item["key"] for item in notify_catalog}
+    status_keys = {item["key"] for item in statuses_catalog}
+    status_default_keys = [item["key"] for item in statuses_catalog if item.get("is_default")]
     notify_selected = [str(x).strip() for x in (row.notify or ["all"]) if str(x).strip()]
-    if "all" not in notify_selected:
-        notify_selected = [k for k in notify_selected if k in notify_keys]
+    preset = admin._status_preset(row.notify)
+    if preset == "default":
+        status_selected = status_default_keys
+    else:
+        status_selected = [k for k in notify_selected if k in status_keys]
     version_set = set(versions_catalog)
     selected_versions = [r.version_key for r in version_rows if r.version_key in version_set]
     return admin.templates.TemplateResponse(
@@ -535,9 +544,9 @@ async def users_edit(
             "u": row,
             "room_localpart": admin._room_localpart(row.room),
             "matrix_domain": matrix_domain,
-            "notify_json": json.dumps(row.notify, ensure_ascii=False),
-            "notify_preset": admin._notify_preset(row.notify),
-            "notify_selected": notify_selected,
+            "status_json": json.dumps(row.notify, ensure_ascii=False),
+            "status_preset": preset,
+            "status_selected": status_selected,
             "groups": admin._groups_assignable(groups_rows),
             "group_unassigned_display": admin.GROUP_UNASSIGNED_DISPLAY,
             "bot_tz": admin.os.getenv("BOT_TIMEZONE", "Europe/Moscow"),
@@ -548,7 +557,7 @@ async def users_edit(
             "version_keys_text": "\n".join(r.version_key for r in version_rows),
             "version_err": version_err,
             "version_msg": version_msg,
-            "notify_catalog": notify_catalog,
+            "statuses_catalog": statuses_catalog,
             "versions_catalog": versions_catalog,
             "selected_version_keys": selected_versions,
             "version_preset": admin._version_preset(selected_versions, versions_catalog),
@@ -564,9 +573,9 @@ async def users_update(
     room: Annotated[str, Form()],
     display_name: Annotated[str, Form()] = "",
     group_id: Annotated[str, Form()] = "",
-    notify_json: Annotated[str, Form()] = "",
-    notify_preset: Annotated[str, Form()] = "all",
-    notify_values: Annotated[list[str], Form()] = [],
+    status_json: Annotated[str, Form()] = "",
+    status_preset: Annotated[str, Form()] = "all",
+    status_values: Annotated[list[str], Form()] = [],
     version_preset: Annotated[str, Form()] = "all",
     version_values: Annotated[list[str], Form()] = [],
     version_keys_text: Annotated[str, Form()] = "",
@@ -582,8 +591,9 @@ async def users_update(
     session: AsyncSession = Depends(get_session),
 ):
     admin = _admin()
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
-    notify_allowed = [item["key"] for item in notify_catalog]
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
+    status_allowed = [item["key"] for item in statuses_catalog]
     admin._verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -598,16 +608,16 @@ async def users_update(
     row.group_id = int(group_id) if str(group_id).isdigit() else None
     row.room = new_room
     row.timezone = (timezone_name or "").strip() or None
-    if notify_preset == "all":
+    if status_preset == "all":
         row.notify = ["all"]
-    elif notify_preset == "new_only":
+    elif status_preset == "new_only":
         row.notify = ["new"]
-    elif notify_preset == "overdue_only":
+    elif status_preset == "overdue_only":
         row.notify = ["overdue"]
-    elif notify_preset == "custom":
-        row.notify = admin._normalize_notify(notify_values, notify_allowed)
+    elif status_preset == "custom":
+        row.notify = admin._normalize_notify(status_values, status_allowed)
     else:
-        row.notify = admin._parse_notify(notify_json)
+        row.notify = admin._parse_notify(status_json)
     if work_hours_from and work_hours_to:
         wh_from = _validate_work_time(work_hours_from, "Время начала")
         wh_to = _validate_work_time(work_hours_to, "Время окончания")

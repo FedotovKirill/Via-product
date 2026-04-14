@@ -6,30 +6,30 @@ import admin.main as main
 import admin.routes.redmine as redmine_mod
 
 # ═══════════════════════════════════════════════════════════════════════════
-# _notify_preset
+# _status_preset
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestNotifyPreset:
-    """_notify_preset: определение пресета уведомлений."""
+    """_status_preset: определение пресета уведомлений."""
 
     def test_none_returns_all(self):
-        assert main._notify_preset(None) == "all"
+        assert main._status_preset(None) == "default"
 
     def test_empty_returns_all(self):
-        assert main._notify_preset([]) == "all"
+        assert main._status_preset([]) == "default"
 
     def test_all_returns_all(self):
-        assert main._notify_preset(["all"]) == "all"
+        assert main._status_preset(["all"]) == "default"
 
     def test_all_with_others_returns_all(self):
-        assert main._notify_preset(["all", "new"]) == "all"
+        assert main._status_preset(["all", "new"]) == "default"
 
     def test_custom_returns_custom(self):
-        assert main._notify_preset(["new", "status_change"]) == "custom"
+        assert main._status_preset(["new", "status_change"]) == "custom"
 
     def test_single_custom(self):
-        assert main._notify_preset(["overdue"]) == "custom"
+        assert main._status_preset(["overdue"]) == "custom"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

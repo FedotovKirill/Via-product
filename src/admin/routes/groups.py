@@ -84,7 +84,9 @@ async def groups_new(
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
+    status_default_keys = [item["key"] for item in statuses_catalog]
     return admin.templates.TemplateResponse(
         request,
         "panel/group_form.html",
@@ -98,10 +100,10 @@ async def groups_new(
             "status_routes": [],
             "status_err": "",
             "status_msg": "",
-            "notify_json": '["all"]',
-            "notify_preset": "all",
-            "notify_selected": ["all"],
-            "notify_catalog": notify_catalog,
+            "status_json": '["all"]',
+            "status_preset": "default",
+            "status_selected": status_default_keys,
+            "statuses_catalog": statuses_catalog,
             "versions_catalog": versions_catalog,
             "initial_version_keys": "",
             "selected_version_keys": [],
@@ -226,11 +228,16 @@ async def groups_edit(
         .order_by(GroupVersionRoute.version_key)
     )
     version_rows = list((await session.execute(gv_stmt)).scalars().all())
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
-    notify_keys = {item["key"] for item in notify_catalog}
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
+    status_keys = {item["key"] for item in statuses_catalog}
+    status_default_keys = [item["key"] for item in statuses_catalog]
     notify_selected = [str(x).strip() for x in (row.notify or ["all"]) if str(x).strip()]
-    if "all" not in notify_selected:
-        notify_selected = [k for k in notify_selected if k in notify_keys]
+    preset = admin._status_preset(row.notify)
+    if preset == "default":
+        status_selected = status_default_keys
+    else:
+        status_selected = [k for k in notify_selected if k in status_keys]
     version_set = set(versions_catalog)
     selected_versions = [r.version_key for r in version_rows if r.version_key in version_set]
     return admin.templates.TemplateResponse(
@@ -249,10 +256,10 @@ async def groups_edit(
             "version_routes": version_rows,
             "version_err": version_err,
             "version_msg": version_msg,
-            "notify_json": json.dumps(row.notify, ensure_ascii=False),
-            "notify_preset": admin._notify_preset(row.notify),
-            "notify_selected": notify_selected,
-            "notify_catalog": notify_catalog,
+            "status_json": json.dumps(row.notify, ensure_ascii=False),
+            "status_preset": preset,
+            "status_selected": status_selected,
+            "statuses_catalog": statuses_catalog,
             "versions_catalog": versions_catalog,
             "selected_version_keys": selected_versions,
             "version_preset": admin._version_preset(selected_versions, versions_catalog),
@@ -272,9 +279,9 @@ async def groups_create(
     version_keys_json: Annotated[str, Form()] = "",
     version_preset: Annotated[str, Form()] = "all",
     version_values: Annotated[list[str], Form()] = [],
-    notify_json: Annotated[str, Form()] = "",
-    notify_preset: Annotated[str, Form()] = "all",
-    notify_values: Annotated[list[str], Form()] = [],
+    status_json: Annotated[str, Form()] = "",
+    status_preset: Annotated[str, Form()] = "all",
+    status_values: Annotated[list[str], Form()] = [],
     work_hours: Annotated[str, Form()] = "",
     work_hours_from: Annotated[str, Form()] = "",
     work_hours_to: Annotated[str, Form()] = "",
@@ -285,8 +292,9 @@ async def groups_create(
     session: AsyncSession = Depends(get_session),
 ):
     admin = _admin()
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
-    notify_allowed = [item["key"] for item in notify_catalog]
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
+    status_allowed = [item["key"] for item in statuses_catalog]
     admin._verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -319,16 +327,16 @@ async def groups_create(
         wd = sorted({int(v) for v in work_days_values if str(v).isdigit()})
     else:
         wd = admin._parse_work_days(work_days_json)
-    if notify_preset == "all":
+    if status_preset == "default":
         notify = ["all"]
-    elif notify_preset == "new_only":
+    elif status_preset == "new_only":
         notify = ["new"]
-    elif notify_preset == "overdue_only":
+    elif status_preset == "overdue_only":
         notify = ["overdue"]
-    elif notify_preset == "custom":
-        notify = admin._normalize_notify(notify_values, notify_allowed)
+    elif status_preset == "custom":
+        notify = admin._normalize_notify(status_values, status_allowed)
     else:
-        notify = admin._parse_notify(notify_json)
+        notify = admin._parse_notify(status_json)
     row = SupportGroup(
         name=n,
         room_id=room,
@@ -355,7 +363,7 @@ async def groups_create(
     version_keys = admin._parse_json_string_list(
         version_keys_json
     ) or admin._parse_status_keys_list(initial_version_keys)
-    if version_preset == "all":
+    if version_preset == "default":
         version_keys = list(versions_catalog)
     elif version_preset == "custom":
         version_keys = admin._normalize_versions(version_values, versions_catalog)
@@ -387,9 +395,9 @@ async def groups_update(
     room_id: Annotated[str, Form()] = "",
     timezone_name: Annotated[str, Form()] = "",
     is_active: Annotated[str | None, Form()] = None,
-    notify_json: Annotated[str, Form()] = "",
-    notify_preset: Annotated[str, Form()] = "all",
-    notify_values: Annotated[list[str], Form()] = [],
+    status_json: Annotated[str, Form()] = "",
+    status_preset: Annotated[str, Form()] = "all",
+    status_values: Annotated[list[str], Form()] = [],
     version_preset: Annotated[str, Form()] = "all",
     version_values: Annotated[list[str], Form()] = [],
     version_keys_json: Annotated[str, Form()] = "",
@@ -404,8 +412,9 @@ async def groups_update(
     session: AsyncSession = Depends(get_session),
 ):
     admin = _admin()
-    notify_catalog, versions_catalog = await admin._load_catalogs(session)
-    notify_allowed = [item["key"] for item in notify_catalog]
+    statuses_catalog = await admin._load_statuses_catalog(session)
+    _nc, versions_catalog = await admin._load_catalogs(session)
+    status_allowed = [item["key"] for item in statuses_catalog]
     admin._verify_csrf(request, csrf_token)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
@@ -439,16 +448,16 @@ async def groups_update(
         wd = sorted({int(v) for v in work_days_values if str(v).isdigit()})
     else:
         wd = admin._parse_work_days(work_days_json)
-    if notify_preset == "all":
+    if status_preset == "default":
         notify = ["all"]
-    elif notify_preset == "new_only":
+    elif status_preset == "new_only":
         notify = ["new"]
-    elif notify_preset == "overdue_only":
+    elif status_preset == "overdue_only":
         notify = ["overdue"]
-    elif notify_preset == "custom":
-        notify = admin._normalize_notify(notify_values, notify_allowed)
+    elif status_preset == "custom":
+        notify = admin._normalize_notify(status_values, status_allowed)
     else:
-        notify = admin._parse_notify(notify_json)
+        notify = admin._parse_notify(status_json)
     old_room = (row.room_id or "").strip()
     new_room = (room_id or "").strip()
     row.name = n
@@ -460,7 +469,7 @@ async def groups_update(
     row.work_hours = wh
     row.work_days = wd
     row.dnd = dnd in ("1", "on", "true")
-    if version_preset == "all":
+    if version_preset == "default":
         submitted_versions = list(versions_catalog)
     elif version_preset == "custom":
         submitted_versions = admin._normalize_versions(version_values, versions_catalog)

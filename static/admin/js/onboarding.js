@@ -25,7 +25,6 @@
     var fd = new FormData();
     var csrf = form.querySelector('input[name="csrf_token"]');
     fd.append("csrf_token", csrf ? csrf.value : "");
-    fd.append("catalog_notify_json", document.getElementById("catalog_notify_json").value || "[]");
     fd.append("catalog_versions_json", document.getElementById("catalog_versions_json").value || "[]");
     if (catalogStatus) catalogStatus.textContent = "Сохранение справочника...";
     fetch("/onboarding/catalog/save", {
@@ -47,14 +46,6 @@
   }
 
   /* --- Init catalog editors --- */
-  createCatalogEditor({
-    kind: "notify",
-    listId: "notify-list",
-    addInputId: "notify-add-input",
-    addBtnId: "notify-add",
-    hiddenId: "catalog_notify_json",
-    onSync: queuePersist
-  });
   createCatalogEditor({
     kind: "simple",
     listId: "versions-list",

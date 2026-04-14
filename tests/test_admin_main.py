@@ -210,7 +210,7 @@ def test_admin_csp_value_env(monkeypatch):
     assert admin_main._admin_csp_value() == "default-src 'none'"
 
 
-def test_notify_presets_helpers():
+def test_status_presets_helpers():
     allowed = ["new", "issue_updated", "overdue"]
     assert admin_main._normalize_notify([]) == ["all"]
     assert admin_main._normalize_notify(["new", "issue_updated"], allowed) == [
@@ -219,10 +219,10 @@ def test_notify_presets_helpers():
     ]
     assert admin_main._normalize_notify(["all", "new"]) == ["all"]
     assert admin_main._normalize_notify(["ghost"], allowed) == ["all"]
-    assert admin_main._notify_preset(["all"]) == "all"
-    assert admin_main._notify_preset(["new"]) == "custom"
-    assert admin_main._notify_preset(["overdue"]) == "custom"
-    assert admin_main._notify_preset(["new", "issue_updated"]) == "custom"
+    assert admin_main._status_preset(["all"]) == "default"
+    assert admin_main._status_preset(["new"]) == "custom"
+    assert admin_main._status_preset(["overdue"]) == "custom"
+    assert admin_main._status_preset(["new", "issue_updated"]) == "custom"
 
 
 def test_version_presets_helpers():
