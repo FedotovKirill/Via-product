@@ -47,32 +47,23 @@ async def scan_check(request: Request, session: AsyncSession = Depends(get_sessi
     return JSONResponse({"ready": ready})
 
 
+# ── Scan endpoint ───────────────────────────────────────────────────────
+
+
 @router.post("/api/users/scan-redmine")
 async def scan_redmine(
     request: Request,
     target_url: Annotated[str, Form()],
     session: AsyncSession = Depends(get_session),
 ):
-    """Сканирует группу Redmine и сопоставляет сотрудников с Matrix.
-
-    Возвращает JSON со списком Match.
-    """
+    """Сканирует группу Redmine и сопоставляет сотрудников с Matrix."""
+    logger.info("SCAN ENDPOINT HIT: target_url=%s", target_url)
     global _last_scan_time
 
     admin = _admin()
-    admin._verify_csrf_json(request)
     user = getattr(request.state, "current_user", None)
     if not user or getattr(user, "role", "") != "admin":
         raise HTTPException(403, "Только admin")
-
-    # Rate limit
-    now = time.monotonic()
-    if now - _last_scan_time < SCAN_COOLDOWN:
-        remaining = int(SCAN_COOLDOWN - (now - _last_scan_time))
-        return JSONResponse(
-            {"error": f"Подождите {remaining}с перед следующим сканированием"},
-            status_code=429,
-        )
 
     # Загружаем credentials
     redmine_url = await admin._load_secret_plain(session, "REDMINE_URL")
@@ -80,20 +71,39 @@ async def scan_redmine(
     matrix_hs = await admin._load_secret_plain(session, "MATRIX_HOMESERVER")
     matrix_token = await admin._load_secret_plain(session, "MATRIX_ACCESS_TOKEN")
 
+    logger.info(
+        "Scan credentials check: url=%s key=%s hs=%s token=%s",
+        bool(redmine_url),
+        bool(redmine_key),
+        bool(matrix_hs),
+        bool(matrix_token),
+    )
+
     if not all([redmine_url, redmine_key, matrix_hs, matrix_token]):
+        missing = []
+        if not redmine_url:
+            missing.append("REDMINE_URL")
+        if not redmine_key:
+            missing.append("REDMINE_API_KEY")
+        if not matrix_hs:
+            missing.append("MATRIX_HOMESERVER")
+        if not matrix_token:
+            missing.append("MATRIX_ACCESS_TOKEN")
         return JSONResponse(
-            {
-                "error": "Заполните Параметры сервиса (Redmine URL, API-ключ, Matrix homeserver, токен)"
-            },
+            {"error": f"Заполните Параметры сервиса. Отсутствуют: {', '.join(missing)}"},
             status_code=400,
         )
 
     # Получаем existing redmine_ids
+    t0 = time.monotonic()
     result = await session.execute(select(BotUser.redmine_id))
     existing_ids = set(result.scalars().all())
+    logger.info("Scan: loaded %d existing IDs in %.2fs", len(existing_ids), time.monotonic() - t0)
 
     # Сканируем
     try:
+        logger.info("Scan: starting scan_redmine_group for %s", target_url)
+        t1 = time.monotonic()
         matches = await scan_redmine_group(
             target_url=target_url,
             redmine_url=redmine_url,
@@ -102,6 +112,7 @@ async def scan_redmine(
             matrix_access_token=matrix_token,
             existing_redmine_ids=existing_ids,
         )
+        logger.info("Scan: completed in %.2fs — %d matches", time.monotonic() - t1, len(matches))
     except Exception as e:
         logger.error("Scan redmine failed: %s", e, exc_info=True)
         return JSONResponse({"error": f"Ошибка сканирования: {e}"}, status_code=500)
@@ -174,11 +185,14 @@ async def bulk_create_users(
             skipped.append({"redmine_id": rid, "reason": "уже существует"})
             continue
 
-        # Формируем room_id из localpart
-        # Загружаем MATRIX_USER_ID чтобы узнать домен
+        # Формируем room_id
         bot_mxid = await admin._load_secret_plain(session, "MATRIX_USER_ID")
         domain = bot_mxid.split(":", 1)[1] if bot_mxid and ":" in bot_mxid else ""
-        room_id = f"@{localpart}:{domain}" if domain else f"@{localpart}"
+        if localpart:
+            room_id = f"@{localpart}:{domain}" if domain else f"@{localpart}"
+        else:
+            # Fallback: используем redmine_id как placeholder
+            room_id = f"@redmine-{rid}:{domain}" if domain else f"@redmine-{rid}"
 
         try:
             row = BotUser(

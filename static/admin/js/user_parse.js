@@ -1,20 +1,14 @@
 /**
  * Парсинг пользователей из Redmine → Matrix.
- * Модалка с 3 шагами: URL → прогресс → результаты.
+ * Inline внутри пузыря, всегда видимый.
  */
 (function () {
   'use strict';
 
   // DOM elements
-  var modal = document.getElementById('parse-modal');
-  var openBtn = document.getElementById('parse-users-btn');
-  var closeBtn = document.getElementById('parse-modal-close');
-  var cancel1 = document.getElementById('parse-cancel-1');
-  var cancel3 = document.getElementById('parse-cancel-3');
   var startBtn = document.getElementById('parse-start');
   var createBtn = document.getElementById('parse-create');
   var targetUrlInput = document.getElementById('parse-target-url');
-  var stepUrl = document.getElementById('parse-step-url');
   var stepProgress = document.getElementById('parse-step-progress');
   var stepResults = document.getElementById('parse-step-results');
   var progressFill = document.getElementById('parse-progress-fill');
@@ -24,6 +18,7 @@
   var selectAllHeader = document.getElementById('parse-select-all-header');
   var selectedCount = document.getElementById('parse-selected-count');
   var resultsBody = document.getElementById('parse-results-body');
+  var parseReadyStatus = document.getElementById('parse-ready-status');
 
   var csrfToken = '';
   var lastScanData = null;
@@ -43,34 +38,32 @@
       var r = await fetch('/api/users/scan-redmine/check');
       var data = await r.json();
       if (data.ready) {
-        openBtn.disabled = false;
-        openBtn.title = 'Начать парсинг пользователей';
+        if (parseReadyStatus) {
+          parseReadyStatus.textContent = '✅ Все параметры заполнены — можно начинать';
+        }
+      } else {
+        if (parseReadyStatus) {
+          parseReadyStatus.textContent = '⚠️ Заполните Параметры сервиса (Redmine + Matrix)';
+        }
       }
     } catch (e) { /* ignore */ }
   }
 
-  // ── Modal open/close ─────────────────────────────────────────
-
-  function openModal() {
-    modal.style.display = 'flex';
-    showStep('url');
-    targetUrlInput.value = '';
-    targetUrlInput.focus();
-    checkReady();
-  }
-
-  function closeModal() {
-    modal.style.display = 'none';
-    lastScanData = null;
-  }
+  // ── Show steps ───────────────────────────────────────────────
 
   function showStep(step) {
-    stepUrl.style.display = step === 'url' ? '' : 'none';
+    targetUrlInput.parentElement.style.display = step === 'url' ? '' : 'none';
     stepProgress.style.display = step === 'progress' ? '' : 'none';
     stepResults.style.display = step === 'results' ? '' : 'none';
   }
 
-  // ── Scan ─────────────────────────────────────────────────────
+  function resetView() {
+    showStep('url');
+    targetUrlInput.value = '';
+    lastScanData = null;
+  }
+
+  // ── Scan ────────────────────────────────────────────────────
 
   async function startScan() {
     var url = targetUrlInput.value.trim();
@@ -79,46 +72,63 @@
       return;
     }
 
+    console.log('[parse] Starting scan for:', url);
+
     showStep('progress');
     progressFill.style.width = '10%';
-    progressText.textContent = 'Подключение к Redmine...';
+    progressText.textContent = 'Загрузка пользователей из Redmine...';
 
     var formData = new FormData();
     formData.append('target_url', url);
     formData.append('csrf_token', getCsrfToken());
 
     try {
-      progressFill.style.width = '30%';
-      progressText.textContent = 'Загрузка пользователей из Redmine...';
+      console.log('[parse] Sending fetch request...');
+      var controller = new AbortController();
+      // Без таймаута — сервер сам контролирует время
 
       var r = await fetch('/api/users/scan-redmine', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
 
-      progressFill.style.width = '80%';
-      progressText.textContent = 'Сопоставление с Matrix...';
+      console.log('[parse] Got response:', r.status);
 
       var data = await r.json();
+      console.log('[parse] Response data:', data);
 
       if (!r.ok) {
         progressFill.style.width = '0%';
-        showStep('url');
+        resetView();
         if (typeof toast !== 'undefined') {
           toast.error(data.error || 'Ошибка сканирования');
         }
         return;
       }
 
-      progressFill.style.width = '100%';
+      // Обновляем прогресс с количеством
+      var total = data.total || 0;
+      var found = data.found || 0;
+      var existing = data.existing || 0;
+      progressText.textContent = 'Найдено ' + total + ' сотрудников в Redmine. ' +
+        'В Matrix сопоставлено: ' + found + ' из ' + total +
+        (existing > 0 ? ' (уже в системе: ' + existing + ')' : '');
+      progressFill.style.width = '95%';
+
       lastScanData = data;
       renderResults(data);
       showStep('results');
     } catch (e) {
+      console.error('[parse] Error:', e);
       progressFill.style.width = '0%';
-      showStep('url');
+      resetView();
       if (typeof toast !== 'undefined') {
-        toast.error('Ошибка сети: ' + e.message);
+        if (e.name === 'AbortError') {
+          toast.error('Превышено время ожидания (2 мин). Попробуйте ещё раз.');
+        } else {
+          toast.error('Ошибка сети: ' + e.message);
+        }
       }
     }
   }
@@ -148,8 +158,8 @@
         statusClass = 'status-not-found';
       }
 
-      var cbChecked = m.status === 'found' ? 'checked' : '';
-      var cbDisabled = m.status !== 'found' ? 'disabled' : '';
+      var cbChecked = 'checked';
+      var cbDisabled = '';
 
       tr.innerHTML =
         '<td><input type="checkbox" class="parse-cb" data-idx="' + i + '" ' + cbChecked + ' ' + cbDisabled + '/></td>' +
@@ -229,9 +239,7 @@
         toast.success(msg);
       }
 
-      closeModal();
-      // Обновляем страницу чтобы увидеть новых пользователей
-      setTimeout(function () { window.location.reload(); }, 800);
+      setTimeout(function () { window.location.href = '/users'; }, 500);
     } catch (e) {
       if (typeof toast !== 'undefined') {
         toast.error('Ошибка сети: ' + e.message);
@@ -253,11 +261,15 @@
 
   // ── Event listeners ──────────────────────────────────────────
 
-  if (openBtn) openBtn.addEventListener('click', openModal);
-  if (closeBtn) closeBtn.addEventListener('click', closeModal);
-  if (cancel1) cancel1.addEventListener('click', closeModal);
-  if (cancel3) cancel3.addEventListener('click', closeModal);
-  if (startBtn) startBtn.addEventListener('click', startScan);
+  if (!startBtn) {
+    console.error('[parse] startBtn not found!');
+  } else {
+    console.log('[parse] startBtn found, attaching listener');
+    startBtn.addEventListener('click', function () {
+      console.log('[parse] startBtn clicked');
+      startScan();
+    });
+  }
   if (createBtn) createBtn.addEventListener('click', bulkCreate);
 
   if (selectAllCb) {
@@ -273,7 +285,6 @@
     });
   }
 
-  // Enter in URL input
   if (targetUrlInput) {
     targetUrlInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
@@ -283,13 +294,5 @@
     });
   }
 
-  // Close on overlay click
-  if (modal) {
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) closeModal();
-    });
-  }
-
-  // Check readiness on load
   checkReady();
 })();

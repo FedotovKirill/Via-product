@@ -85,6 +85,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Аутентификация через session cookie, CSRF."""
 
     async def dispatch(self, request: Request, call_next):
+        print(f"[MW] >>> {request.method} {request.url.path}")
         p = request.url.path
 
         # ── Пропускаем без проверки ──
@@ -178,6 +179,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.csrf_token = csrf_token
 
         response = await call_next(request)
+        print(f"[MW] <<< {request.method} {p} → {response.status_code}")
         if set_csrf_cookie:
             response.set_cookie(
                 CSRF_COOKIE_NAME,

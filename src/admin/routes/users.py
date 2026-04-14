@@ -720,6 +720,35 @@ async def users_delete(
     return RedirectResponse("/users", status_code=303)
 
 
+@router.post("/users/bulk-delete")
+async def users_bulk_delete(
+    request: Request,
+    user_ids: Annotated[list[str], Form()],
+    csrf_token: Annotated[str, Form()] = "",
+    session: AsyncSession = Depends(get_session),
+):
+    """Массовое удаление пользователей."""
+    admin = _admin()
+    admin._verify_csrf(request, csrf_token)
+    user = getattr(request.state, "current_user", None)
+    if not user or getattr(user, "role", "") != "admin":
+        return JSONResponse({"success": False, "error": "Только admin"}, status_code=403)
+
+    deleted_count = 0
+    for uid in user_ids:
+        if uid.isdigit():
+            row = await session.get(BotUser, int(uid))
+            if row:
+                await session.delete(row)
+                deleted_count += 1
+
+    await session.commit()
+    await admin._maybe_log_admin_crud(
+        session, user, "bot_user", "bulk_delete", {"count": deleted_count, "ids": user_ids}
+    )
+    return JSONResponse({"success": True, "deleted": deleted_count})
+
+
 # --- Bot Heartbeat API ---
 
 

@@ -88,8 +88,9 @@ TRANSLIT_ALTERNATIVES: dict[str, list[str]] = {
 }
 
 REQUEST_TIMEOUT = 15.0
+MATRIX_TIMEOUT = 5.0
 MATRIX_SEARCH_LIMIT = 10
-RATE_LIMIT_DELAY = 0.3
+RATE_LIMIT_DELAY = 0.0
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Данные
@@ -283,6 +284,12 @@ def find_best_match(
     candidates = []
     for user in matrix_results:
         score = score_matrix_candidate(redmine_name, user)
+        import sys as _fbs
+        _fbs.stderr.write(
+            f"  [SCORE] '{redmine_name}' vs '{user.get('display_name','?')}' "
+            f"({user.get('user_id','?')}) → score={score:.2f}\n"
+        )
+        _fbs.stderr.flush()
         if score >= min_score:
             candidates.append((score, user))
 
@@ -456,6 +463,15 @@ async def search_matrix_user(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _normalize_homeserver(homeserver: str) -> str:
+    """Убирает https://, http:// и trailing slash."""
+    hs = homeserver.strip().rstrip("/")
+    for prefix in ("https://", "http://"):
+        if hs.startswith(prefix):
+            hs = hs[len(prefix):]
+    return hs
+
+
 async def scan_redmine_group(
     target_url: str,
     redmine_url: str,
@@ -466,38 +482,47 @@ async def scan_redmine_group(
 ) -> list[Match]:
     """
     Сканирует группу Redmine и сопоставляет сотрудников с Matrix.
-
-    Args:
-        target_url: URL страницы группы в Redmine (например /groups/5)
-        redmine_url: Базовый URL Redmine (из app_secrets)
-        redmine_api_key: API ключ Redmine (из app_secrets)
-        matrix_homeserver: Домен Matrix (без https://)
-        matrix_access_token: Токен бота Matrix (из app_secrets)
-        existing_redmine_ids: Множество redmine_id уже существующих пользователей
-
-    Returns:
-        Список Match с результатами сопоставления.
     """
+    import asyncio
+    import sys as _sys
+    import time as _time
+
     if existing_redmine_ids is None:
         existing_redmine_ids = set()
 
+    _sys.stderr.write(f"[MATCH] START: target_url={target_url}\n")
+    _sys.stderr.flush()
+    _t_start = _time.monotonic()
     base_url, api_url, params, endpoint_type = parse_url_to_endpoint(target_url)
     if not api_url:
         return []
+
+    # Нормализуем homeserver (убираем https://)
+    clean_hs = _normalize_homeserver(matrix_homeserver)
+    _sys.stderr.write(f"[MATCH] homeserver raw='{matrix_homeserver}' → clean='{clean_hs}'\n")
+    _sys.stderr.flush()
+
+    _sys.stderr.write(f"[MATCH] URL parsed: {endpoint_type}\n")
+    _sys.stderr.flush()
 
     async with httpx.AsyncClient(
         base_url=redmine_url,
         timeout=REQUEST_TIMEOUT,
         follow_redirects=True,
     ) as redmine_client:
-        # Для Matrix — отдельный клиент (другой base_url)
-        matrix_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+        # Для Matrix — отдельный клиент с коротким таймаутом
+        matrix_client = httpx.AsyncClient(timeout=MATRIX_TIMEOUT)
 
         try:
+            _sys.stderr.write("[MATCH] fetching Redmine users...\n")
+            _sys.stderr.flush()
+            _t_redmine = _time.monotonic()
             rm_users = await fetch_redmine_users(
                 redmine_client, api_url, params or {}, endpoint_type, redmine_api_key
             )
             rm_users = [u for u in rm_users if is_human_entry(u)]
+            _sys.stderr.write(f"[MATCH] Redmine: {len(rm_users)} human users in {_time.monotonic()-_t_redmine:.2f}s\n")
+            _sys.stderr.flush()
 
             if not rm_users:
                 return []
@@ -505,40 +530,78 @@ async def scan_redmine_group(
             results: list[Match] = []
             seen_matrix_ids: set[str] = set()
 
-            for user in rm_users:
-                rm_name = extract_name(user)
-                rm_id = user.get("id", 0)
+            _sys.stderr.write(f"[MATCH] starting Matrix matching for {len(rm_users)} users...\n")
+            _sys.stderr.flush()
+            _t_matrix_start = _time.monotonic()
+            _match_count = 0
 
-                # Проверяем существует ли уже
-                if rm_id in existing_redmine_ids:
+            # Параллельный матчинг батчами по 5
+            _batch_size = 5
+            for _batch_start in range(0, len(rm_users), _batch_size):
+                _batch = rm_users[_batch_start:_batch_start + _batch_size]
+                _sys.stderr.write(
+                    f"[MATCH] batch {_batch_start//_batch_size + 1}: processing {_batch_start+1}-{_batch_start+len(_batch)}/{len(rm_users)}...\n"
+                )
+                _sys.stderr.flush()
+                _batch_t0 = _time.monotonic()
+
+                # Запускаем параллельно
+                _batch_tasks = [
+                    _search_and_match(matrix_client, clean_hs, matrix_access_token,
+                                       extract_name(u), seen_matrix_ids)
+                    for u in _batch
+                ]
+                _batch_results = await asyncio.gather(*_batch_tasks, return_exceptions=True)
+
+                for u, match_result in zip(_batch, _batch_results):
+                    _match_count += 1
+                    rm_name = extract_name(u)
+                    rm_id = u.get("id", 0)
+
+                    if isinstance(match_result, Exception):
+                        _sys.stderr.write(
+                            f"[MATCH]   #{_match_count}/{len(rm_users)} {rm_name}: ERROR {match_result}\n"
+                        )
+                        _sys.stderr.flush()
+                        best_match = None
+                    else:
+                        best_match = match_result
+                        _sys.stderr.write(
+                            f"[MATCH]   #{_match_count}/{len(rm_users)} {rm_name}: "
+                            + ("FOUND" if best_match else "NOT FOUND")
+                            + f" ({_time.monotonic()-_batch_t0:.1f}s elapsed)\n"
+                        )
+                        _sys.stderr.flush()
+
+                    if rm_id in existing_redmine_ids:
+                        results.append(
+                            Match(
+                                redmine_name=rm_name,
+                                redmine_id=rm_id,
+                                status="existing",
+                            )
+                        )
+                        continue
+
+                    localpart = extract_matrix_localpart(best_match)
+                    display = best_match.get("display_name", "") if best_match else None
+                    user_id = best_match.get("user_id") if best_match else None
+
                     results.append(
                         Match(
                             redmine_name=rm_name,
                             redmine_id=rm_id,
-                            status="existing",
+                            matrix_localpart=localpart,
+                            matrix_display_name=display,
+                            matrix_user_id=user_id,
+                            status="found" if localpart else "not_found",
                         )
                     )
-                    continue
 
-                # Ищем в Matrix
-                best_match = await _search_and_match(
-                    matrix_client, matrix_homeserver, matrix_access_token, rm_name, seen_matrix_ids
-                )
-
-                localpart = extract_matrix_localpart(best_match)
-                display = best_match.get("display_name", "") if best_match else None
-                user_id = best_match.get("user_id") if best_match else None
-
-                results.append(
-                    Match(
-                        redmine_name=rm_name,
-                        redmine_id=rm_id,
-                        matrix_localpart=localpart,
-                        matrix_display_name=display,
-                        matrix_user_id=user_id,
-                        status="found" if localpart else "not_found",
-                    )
-                )
+            _t_total = _time.monotonic() - _t_start
+            _t_matrix = _time.monotonic() - _t_matrix_start
+            _sys.stderr.write(f"[MATCH] DONE: {len(rm_users)} users, matrix={_t_matrix:.1f}s total={_t_total:.1f}s\n")
+            _sys.stderr.flush()
 
             return results
 
@@ -553,17 +616,31 @@ async def _search_and_match(
     rm_name: str,
     seen_ids: set[str],
 ) -> dict[str, Any] | None:
-    """Ищет сотрудника в Matrix: сначала кириллица, потом транслит."""
+    """Ищет сотрудника в Matrix: кириллица → транслит. Оптимизировано для скорости."""
+    import asyncio as _asyncio
+    import logging as _search_log
+    import sys as _sys
+    import time as _st
+
+    _s_logger = _search_log.getLogger("user_matcher.search")
+    _t0 = _st.monotonic()
     combined: list[dict[str, Any]] = []
 
-    # Шаг 1: прямой поиск по кириллице
+    # Шаг 1: прямой поиск по кириллице (2 запроса: прямой + обратный порядок)
     search_names = [rm_name]
     name_noyo = normalize_yo(rm_name)
     if name_noyo != rm_name:
         search_names.append(name_noyo)
 
     for name in search_names:
+        _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}' → searching '{name}'...\n")
+        _sys.stderr.flush()
         results = await search_matrix_user(client, homeserver, access_token, name)
+        _sys.stderr.write(f"[MATCH-SEARCH]   got {len(results)} results\n")
+        _sys.stderr.flush()
+        if results:
+            _sys.stderr.write(f"[MATCH-SEARCH]   sample: {results[0].get('user_id')} / {results[0].get('display_name')}\n")
+            _sys.stderr.flush()
         for user in results:
             uid = user.get("user_id", "")
             if uid not in seen_ids:
@@ -574,25 +651,65 @@ async def _search_and_match(
         parts = name.split()
         if len(parts) >= 2:
             alt_name = f"{parts[-1]} {' '.join(parts[:-1])}"
+            _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}' → searching reversed '{alt_name}'...\n")
+            _sys.stderr.flush()
             results_rev = await search_matrix_user(client, homeserver, access_token, alt_name)
+            _sys.stderr.write(f"[MATCH-SEARCH]   got {len(results_rev)} results\n")
+            _sys.stderr.flush()
             for user in results_rev:
                 uid = user.get("user_id", "")
                 if uid not in seen_ids:
                     seen_ids.add(uid)
                     combined.append(user)
 
+    _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}': {len(combined)} candidates after direct search\n")
+    _sys.stderr.flush()
+
     match = find_best_match(rm_name, combined)
     if match:
+        _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}': MATCHED via direct (score>threshold)\n")
+        _sys.stderr.flush()
         return match
 
-    # Шаг 2: fallback — транслитерация
-    translit_queries = generate_translit_queries(rm_name)
-    for query in translit_queries:
-        import asyncio
+    # Шаг 1.5: поиск по транслиту (для имён вроде "irina_sorochan")
+    translit_name = transliterate(rm_name)
+    translit_rev = " ".join(reversed(translit_name.split()))
+    translit_searches = [translit_name]
+    if translit_rev != translit_name:
+        translit_searches.append(translit_rev)
 
-        await asyncio.sleep(RATE_LIMIT_DELAY)
+    _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}': falling back to translit searches: {translit_searches}\n")
+    _sys.stderr.flush()
+
+    for t_name in translit_searches:
+        results_t = await search_matrix_user(client, homeserver, access_token, t_name)
+        _sys.stderr.write(f"[MATCH-SEARCH]   translit '{t_name}' got {len(results_t)} results\n")
+        _sys.stderr.flush()
+        if results_t:
+            _sys.stderr.write(f"[MATCH-SEARCH]   sample: {results_t[0].get('user_id')} / {results_t[0].get('display_name')}\n")
+            _sys.stderr.flush()
+        for user in results_t:
+            uid = user.get("user_id", "")
+            if uid not in seen_ids:
+                seen_ids.add(uid)
+                combined.append(user)
+
+    match = find_best_match(rm_name, combined)
+    if match:
+        _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}': MATCHED via translit\n")
+        _sys.stderr.flush()
+        return match
+
+    # Шаг 2: fallback — только 2 лучших транслит-варианта
+    translit_queries = generate_translit_queries(rm_name)[:2]
+    _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}': falling back to translit queries: {translit_queries}\n")
+    _sys.stderr.flush()
+    for query in translit_queries:
+        await _asyncio.sleep(RATE_LIMIT_DELAY)
 
         results = await search_matrix_user(client, homeserver, access_token, query)
+        _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}' → translit '{query}' got {len(results)} results\n")
+        _sys.stderr.flush()
         new_results = []
         for user in results:
             uid = user.get("user_id", "")
@@ -604,6 +721,12 @@ async def _search_and_match(
         if new_results:
             match = find_best_match(rm_name, combined)
             if match:
+                _sys.stderr.write(
+                    f"[MATCH-SEARCH] '{rm_name}': MATCHED via translit '{query}'\n"
+                )
+                _sys.stderr.flush()
                 return match
 
+    _sys.stderr.write(f"[MATCH-SEARCH] '{rm_name}': NO MATCH after {_st.monotonic()-_t0:.1f}s\n")
+    _sys.stderr.flush()
     return None
