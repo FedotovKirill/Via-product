@@ -303,54 +303,12 @@ async def _find_dm_via_api(client: "AsyncClient", target_mxid: str, bot_mxid: st
 
 
 def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
-    """Ищет существующую DM-комнату среди загруженных комнат. Не делает API-вызовов."""
-    # Используем наш кеш комнат (client._rooms_cache)
-    rooms_to_check = getattr(client, '_rooms_cache', {})
-    
-    if not rooms_to_check:
-        logger.debug("🔍 _find_existing_dm: _rooms_cache пустой")
-        return None
+    """Ищет существующую DM-комнату через API (так как client.room_members не существует)."""
+    # Быстрая проверка по БД кешу - если есть, возвращаем сразу
+    if target_mxid in _mxid_to_room_cache:
+        logger.debug("💾 DM найден в памяти: %s → %s", target_mxid, _mxid_to_room_cache[target_mxid])
+        return _mxid_to_room_cache[target_mxid]
 
-    logger.debug("🔍 _find_existing_dm: проверяем %d комнат, target=%s, bot=%s",
-                len(rooms_to_check), target_mxid, bot_mxid)
-
-    found_with_members = 0
-    for r_id, room_obj in rooms_to_check.items():
-        members = set()
-        if hasattr(room_obj, "users"):
-            users_attr = room_obj.users
-            # Если users это метод - вызываем
-            if callable(users_attr):
-                try:
-                    members = {m for m in users_attr()}
-                except Exception:
-                    members = set()
-            else:
-                members = {m for m in (users_attr or set())}
-        elif hasattr(room_obj, "members"):
-            members_attr = room_obj.members
-            # Если members это метод - вызываем
-            if callable(members_attr):
-                try:
-                    members = {m for m in members_attr()}
-                except Exception:
-                    members = set()
-            else:
-                members = set(members_attr or set())
-        
-        # Считаем только валидные MXID
-        valid_members = {m for m in members if m and isinstance(m, str) and m.startswith('@')}
-        
-        if valid_members:
-            found_with_members += 1
-            logger.debug("  📍 Комната %s: members=%d (валидных: %d)", r_id, len(members), len(valid_members))
-            logger.debug("     Участники: %s", list(valid_members)[:5])
-        
-        if target_mxid in valid_members and bot_mxid in valid_members and len(valid_members) == 2:
-            logger.info("✅ DM найден: %s", r_id)
-            return r_id
-
-    logger.debug("📊 Всего комнат с участниками: %d из %d", found_with_members, len(rooms_to_check))
     return None
 
 

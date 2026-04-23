@@ -34,6 +34,7 @@ async def load_dm_cache(session: AsyncSession) -> dict[str, str]:
 async def save_dm_cache(session: AsyncSession, mxid: str, room_id: str) -> None:
     """Сохраняет DM-комнату в кеш."""
     from sqlalchemy import update, insert, exists, select
+    from sqlalchemy.sql import func
     
     # Проверяем существует ли запись
     exists_stmt = select(exists().where(DmCache.user_mxid == mxid))
@@ -44,7 +45,7 @@ async def save_dm_cache(session: AsyncSession, mxid: str, room_id: str) -> None:
         await session.execute(
             update(DmCache)
             .where(DmCache.user_mxid == mxid)
-            .values(room_id=room_id, updated_at=datetime.now(timezone.utc))
+            .values(room_id=room_id, updated_at=func.now())
         )
     else:
         await session.execute(

@@ -465,38 +465,8 @@ async def main() -> None:
             logger.info("  📊 client._rooms_cache type: %s, len: %d", type(rooms_cache), len(rooms_cache))
             logger.info("  📋 Первые комнаты: %s", list(rooms_cache.keys())[:3])
             
-            # Загружаем участников для каждой комнаты (критично для поиска DM)
-            rooms_cache = getattr(client, '_rooms_cache', {})
-            logger.info("  🔍 rooms_cache для загрузки members: type=%s, len=%d", type(rooms_cache), len(rooms_cache))
-            
-            if rooms_cache:
-                logger.info("🔄 Загружаем участников комнат для DM-резолва...")
-                loaded = 0
-                errors = 0
-                rooms_list = list(rooms_cache.items())
-                logger.info("  📋 rooms_cache.items() вернул %d элементов", len(rooms_list))
-                
-                for i, (room_id, room_stub) in enumerate(rooms_list[:50]):  # Лимит 50 комнат
-                    try:
-                        logger.debug("    🔄 [%d/%d] Загружаем members для %s", i+1, min(50, len(rooms_list)), room_id)
-                        members_resp = await client.room_members(room_id)
-                        logger.debug("      📋 members_resp type: %s", type(members_resp).__name__)
-                        
-                        if hasattr(members_resp, 'members'):
-                            member_ids = {m.user_id for m in members_resp.members if m.user_id}
-                            logger.debug("        👥 Найдено %d участников", len(member_ids))
-                            room_stub.members = member_ids
-                            room_stub.users = member_ids
-                            room_stub.member_count = len(member_ids)
-                            loaded += 1
-                        else:
-                            logger.debug("        ⚠ members_resp не имеет атрибута 'members'")
-                            errors += 1
-                    except Exception as e:
-                        logger.warning("⚠ Не удалось загрузить members для %s: %s (%s)", room_id, type(e).__name__, e)
-                        errors += 1
-                
-                logger.info("✅ Загружены участники для %d комнат, ошибок: %d", loaded, errors)
+            # Загрузка участников комнат отключена - используем БД кеш для DM
+            logger.info("ℹ️ Загрузка участников комнат отключена - используется БД кеш")
             
             logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
             
