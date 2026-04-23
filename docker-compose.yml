@@ -89,6 +89,8 @@ services:
       # Синхронизация времени с хостом
       - /etc/localtime:/etc/localtime:ro
     working_dir: /app
+    # Сеть хоста для доступа к внешнему Matrix-серверу
+    network_mode: host
     healthcheck:
       # Отдельный процесс импортирует модуль бота — проверка целостности образа и зависимостей.
       test: ["CMD", "python", "-c", "import src.bot.main"]

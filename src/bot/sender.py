@@ -172,14 +172,20 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
 
 async def _fetch_joined_rooms_via_api(homeserver: str, access_token: str) -> list[str]:
     """Получает список комнат через Matrix API напрямую."""
+    # Убираем trailing slash если есть
+    homeserver = homeserver.rstrip("/")
+    
     # Пробуем разные версии API
     for version in ["v3", "r0", "v2"]:
         url = f"{homeserver}/_matrix/client/{version}/joined_rooms"
         headers = {"Authorization": f"Bearer {access_token}"}
         
+        logger.debug("🔍 Пробуем API: %s", url)
+        
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    logger.debug("📋 API response status: %d", resp.status)
                     if resp.status == 200:
                         data = await resp.json()
                         rooms = data.get("joined_rooms", [])
@@ -190,9 +196,15 @@ async def _fetch_joined_rooms_via_api(homeserver: str, access_token: str) -> lis
                         continue
                     else:
                         logger.warning("⚠ API joined_rooms (%s): status %d", version, resp.status)
+                        # Попробуем прочитать тело ошибки
+                        try:
+                            error_body = await resp.text()
+                            logger.debug("📄 Error body: %s", error_body[:200])
+                        except Exception:
+                            pass
                         continue
         except Exception as e:
-            logger.debug("⚠ API joined_rooms (%s) error: %s", version, e)
+            logger.error("⚠ API joined_rooms (%s) exception: %s", version, e)
             continue
     
     logger.warning("⚠ Не удалось получить joined_rooms ни через одну версию API")
