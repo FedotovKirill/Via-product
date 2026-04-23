@@ -253,8 +253,20 @@ async def _find_dm_via_api(client: "AsyncClient", target_mxid: str, bot_mxid: st
     room_ids = await _fetch_joined_rooms_via_api(homeserver, access_token)
     
     # Для каждой комнаты проверяем участников
+    rooms_cache = getattr(client, '_rooms_cache', {})
     for room_id in room_ids:
         members = await _fetch_room_members_via_api(homeserver, access_token, room_id)
+        
+        # Кешируем в _rooms_cache
+        if room_id not in rooms_cache:
+            class RoomStub:
+                def __init__(self, rid, mbrs):
+                    self.room_id = rid
+                    self.members = mbrs
+                    self.users = mbrs
+                    self.member_count = len(mbrs)
+            rooms_cache[room_id] = RoomStub(room_id, members)
+        
         if target_mxid in members and bot_mxid in members and len(members) == 2:
             logger.info("✅ DM найден через API: %s", room_id)
             return room_id
@@ -264,17 +276,12 @@ async def _find_dm_via_api(client: "AsyncClient", target_mxid: str, bot_mxid: st
 
 def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
     """Ищет существующую DM-комнату среди загруженных комнат. Не делает API-вызовов."""
-    # Проверяем rooms (nio хранит комнаты здесь после sync)
-    rooms_attr = getattr(client, "rooms", None)
+    # Используем наш кеш комнат (client._rooms_cache)
+    rooms_to_check = getattr(client, '_rooms_cache', {})
     
-    # Если rooms это метод - вызываем его
-    if callable(rooms_attr):
-        try:
-            rooms_to_check = rooms_attr()
-        except Exception:
-            rooms_to_check = {}
-    else:
-        rooms_to_check = rooms_attr or {}
+    if not rooms_to_check:
+        logger.debug("🔍 _find_existing_dm: _rooms_cache пустой")
+        return None
 
     logger.debug("🔍 _find_existing_dm: проверяем %d комнат, target=%s, bot=%s",
                 len(rooms_to_check), target_mxid, bot_mxid)
@@ -398,18 +405,19 @@ async def _resolve_room_id(client: "AsyncClient", room_or_mxid: str) -> str:
     bot_mxid = client.user_id
 
     # Синхронизируем список комнат (нужен хотя бы один sync)
-    if not client.rooms:
+    if not getattr(client, '_rooms_cache', None):
         logger.info("📡 Matrix sync (первый раз, для поиска DM)...")
         await client.sync(timeout=10000, full_state=True)
 
     # Дополнительная синхронизация если rooms пустой
-    if not client.rooms:
+    if not getattr(client, '_rooms_cache', None):
         logger.info("📡 Matrix sync (дополнительная синхронизация)...")
         await client.sync(timeout=10000, full_state=True)
 
-    logger.info("📊 Matrix rooms debug: rooms=%d", len(client.rooms or {}))
+    rooms_cache = getattr(client, '_rooms_cache', {})
+    logger.info("📊 Matrix rooms debug: _rooms_cache=%d", len(rooms_cache))
 
-    # Ищем существующую DM-комнату через client.rooms
+    # Ищем существующую DM-комнату через client._rooms_cache
     room_id = _find_existing_dm(client, target_mxid, bot_mxid)
     if room_id:
         logger.info("🔗 DM найден: %s → %s", target_mxid, room_id)

@@ -410,7 +410,8 @@ async def main() -> None:
                             data = await resp.json()
                             room_ids = data.get("joined_rooms", [])
                             logger.info("✅ API вернул %d комнат", len(room_ids))
-                            # Кешируем
+                            # Кешируем в client._rooms_cache
+                            rooms_cache = {}
                             for room_id in room_ids:
                                 class RoomStub:
                                     def __init__(self, rid):
@@ -418,10 +419,9 @@ async def main() -> None:
                                         self.members = set()
                                         self.users = set()
                                         self.member_count = 0
-                                if not hasattr(client, 'rooms') or client.rooms is None:
-                                    client.rooms = {}
-                                client.rooms[room_id] = RoomStub(room_id)
-                            logger.info("✅ Rooms загружены через API")
+                                rooms_cache[room_id] = RoomStub(room_id)
+                            client._rooms_cache = rooms_cache
+                            logger.info("✅ Rooms загружены через API в client._rooms_cache")
                         else:
                             logger.warning("⚠ API вернул status %d", resp.status)
                             error_body = await resp.text()
@@ -440,7 +440,8 @@ async def main() -> None:
                     rooms_count = len(sync_resp.rooms.join)
                     logger.info("  📊 sync_resp.rooms.join: %d комнат", rooms_count)
                     
-                    # Кешируем в client.rooms для sender.py
+                    # Создаём отдельный кеш комнат (не перезаписываем client.rooms — это метод в nio)
+                    rooms_cache = {}
                     for room_id in sync_resp.rooms.join.keys():
                         class RoomStub:
                             def __init__(self, rid):
@@ -448,16 +449,18 @@ async def main() -> None:
                                 self.members = set()
                                 self.users = set()
                                 self.member_count = 0
-                        if not hasattr(client, 'rooms') or client.rooms is None:
-                            client.rooms = {}
-                        client.rooms[room_id] = RoomStub(room_id)
-                    logger.info("✅ Rooms загружены из sync response в client.rooms")
+                        rooms_cache[room_id] = RoomStub(room_id)
+                    
+                    # Сохраняем кеш в client._rooms_cache
+                    client._rooms_cache = rooms_cache
+                    logger.info("✅ Rooms загружены из sync response в client._rooms_cache")
             
             # Загружаем участников для каждой комнаты (критично для поиска DM)
-            if rooms_count > 0:
+            rooms_cache = getattr(client, '_rooms_cache', {})
+            if rooms_cache:
                 logger.info("🔄 Загружаем участников комнат для DM-резолва...")
                 loaded = 0
-                for room_id, room_stub in list(client.rooms.items())[:50]:  # Лимит 50 комнат
+                for room_id, room_stub in list(rooms_cache.items())[:50]:  # Лимит 50 комнат
                     try:
                         members_resp = await client.room_members(room_id)
                         if hasattr(members_resp, 'members'):
