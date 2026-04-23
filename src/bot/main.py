@@ -386,39 +386,36 @@ async def main() -> None:
     try:
         sync_resp = await client.sync(timeout=30000, full_state=True)
         
-        # nio хранит комнаты в разных атрибутах — проверяем все
+        # nio хранит комнаты в sync_resp.rooms.join
         rooms_count = 0
-        for attr_name in ['rooms', 'joined_rooms', 'invited_rooms', 'left_rooms']:
-            attr = getattr(client, attr_name, None)
-            if attr:
-                if callable(attr):
-                    try:
-                        count = len(attr())
-                    except Exception:
-                        count = 0
-                elif isinstance(attr, dict):
-                    count = len(attr)
-                else:
-                    count = 0
-                logger.info("  📊 client.%s: %d", attr_name, count)
-                rooms_count += count
+        if hasattr(sync_resp, 'rooms') and sync_resp.rooms:
+            if hasattr(sync_resp.rooms, 'join') and sync_resp.rooms.join:
+                rooms_count = len(sync_resp.rooms.join)
+                logger.info("  📊 sync_resp.rooms.join: %d комнат", rooms_count)
+                
+                # Кешируем в client.rooms для sender.py
+                for room_id in sync_resp.rooms.join.keys():
+                    class RoomStub:
+                        def __init__(self, rid):
+                            self.room_id = rid
+                            self.members = set()
+                            self.users = set()
+                            self.member_count = 0
+                    if not hasattr(client, 'rooms') or client.rooms is None:
+                        client.rooms = {}
+                    client.rooms[room_id] = RoomStub(room_id)
+                logger.info("✅ Rooms загружены из sync response в client.rooms")
         
-        # Если rooms пустой но sync успешен — используем sync_resp
-        if rooms_count == 0 and sync_resp:
-            if hasattr(sync_resp, 'rooms') and sync_resp.rooms:
-                if hasattr(sync_resp.rooms, 'join') and sync_resp.rooms.join:
-                    rooms_count = len(sync_resp.rooms.join)
-                    logger.info("  📊 sync_resp.rooms.join: %d", rooms_count)
-                    # Кешируем из sync response
-                    for room_id in sync_resp.rooms.join.keys():
-                        class RoomStub:
-                            def __init__(self, rid):
-                                self.room_id = rid
-                                self.members = set()
-                                self.users = set()
-                                self.member_count = 0
-                        client.rooms[room_id] = RoomStub(room_id)
-                    logger.info("✅ Rooms загружены из sync response")
+        # Проверяем client.rooms
+        if hasattr(client, 'rooms') and client.rooms:
+            if callable(client.rooms):
+                try:
+                    r_count = len(client.rooms())
+                    logger.info("  📊 client.rooms(): %d", r_count)
+                except Exception:
+                    pass
+            elif isinstance(client.rooms, dict):
+                logger.info("  📊 client.rooms (dict): %d", len(client.rooms))
         
         logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
     except Exception as e:
