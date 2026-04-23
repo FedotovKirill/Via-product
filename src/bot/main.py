@@ -396,10 +396,12 @@ async def main() -> None:
             logger.info("  ℹ️ Это может означать что токен недействителен или сервер недоступен")
             # Пробуем загрузить комнаты через API напрямую
             logger.info("🔄 Пробуем загрузить комнаты через /joined_rooms API...")
-            logger.info("  🔍 URL: %s/_matrix/client/v3/joined_rooms", HOMESERVER)
+            # Убираем trailing slash из HOMESERVER
+            hs_clean = HOMESERVER.rstrip("/")
+            logger.info("  🔍 URL: %s/_matrix/client/v3/joined_rooms", hs_clean)
             try:
                 import aiohttp
-                url = f"{HOMESERVER}/_matrix/client/v3/joined_rooms"
+                url = f"{hs_clean}/_matrix/client/v3/joined_rooms"
                 headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, headers=headers, timeout=10) as resp:

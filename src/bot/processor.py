@@ -56,9 +56,14 @@ async def check_user_issues(
     # ── Загружаем задачи из Redmine (инкрементально, в thread pool) ──
     last_check = last_check_time.get(uid)
     try:
+        # ID открытых статусов в Redmine
+        # 1=Новая, 2=В работе, 17=Ожидается решение, 22=Передано в работу.РВ, и т.д.
+        # Исключаем завершённые: 5=Завершена, 6=Отклонена, 32=Решен
+        open_status_ids = "1,2,17,18,22,23,25,26,27,28,29,30,31,33"
+        
         params: dict = {
             "assigned_to_id": uid,
-            "status_id": "open",
+            "status_id": open_status_ids,
             "include": ["journals"],
         }
         if last_check:
@@ -77,7 +82,7 @@ async def check_user_issues(
                 )
                 params_no_filter = {
                     "assigned_to_id": uid,
-                    "status_id": "open",
+                    "status_id": open_status_ids,
                     "include": ["journals"],
                 }
                 issues = await run_in_thread(lambda: list(redmine.issue.filter(**params_no_filter)))

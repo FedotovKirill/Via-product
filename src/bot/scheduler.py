@@ -159,7 +159,9 @@ async def daily_report(
             continue
 
         try:
-            issues = list(rm_user.issue.filter(assigned_to_id=uid, status_id="open"))
+            # ID открытых статусов (исключая завершённые)
+            open_status_ids = "1,2,17,18,22,23,25,26,27,28,29,30,31,33"
+            issues = list(rm_user.issue.filter(assigned_to_id=uid, status_id=open_status_ids))
         except Exception as e:
             logger.error("❌ Redmine (%s, user %s): %s", "утренний отчёт", uid, e, exc_info=True)
             continue
@@ -235,7 +237,9 @@ async def cleanup_state_files(
             uid = user_cfg["redmine_id"]
             rm_user = redmine_client_for_user(redmine, user_cfg)
             try:
-                open_issues = list(rm_user.issue.filter(assigned_to_id=uid, status_id="open"))
+                # ID открытых статусов (исключая завершённые)
+                open_status_ids = "1,2,17,18,22,23,25,26,27,28,29,30,31,33"
+                open_issues = list(rm_user.issue.filter(assigned_to_id=uid, status_id=open_status_ids))
             except Exception as e:
                 logger.error(
                     "❌ Redmine (%s, user %s): %s", "очистка state (db)", uid, e, exc_info=True
