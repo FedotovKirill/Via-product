@@ -38,9 +38,32 @@ DM_CREATE_DELAY: float = 5.0
 
 _notification_template = None
 
-# ── Кеш MXID → room_id (чтобы не искать/создавать DM каждый раз) ────────────
+# ── Кеш MXID → room_id (загружается из БД при старте) ────────────────────────
 
 _mxid_to_room_cache: dict[str, str] = {}
+
+# ── DB session для сохранения кеша ───────────────────────────────────────────
+
+_db_session = None
+
+
+def set_db_session(session):
+    """Устанавливает DB session для сохранения кеша."""
+    global _db_session
+    _db_session = session
+
+
+async def _save_to_db_cache(mxid: str, room_id: str) -> None:
+    """Сохраняет DM в БД кеш."""
+    if _db_session is None:
+        logger.debug("⚠ DB session не установлен, пропускаем сохранение в БД")
+        return
+    try:
+        from bot.dm_cache import save_dm_cache
+        await save_dm_cache(_db_session, mxid, room_id)
+        logger.debug("💾 Сохранено в БД: %s → %s", mxid, room_id)
+    except Exception as e:
+        logger.warning("⚠ Не удалось сохранить в БД: %s", e)
 
 # ── Множество MXID, для которых создание DM провалилось в текущем цикле ─────
 
@@ -99,6 +122,7 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
             m = f"@{m}"
         if m in _mxid_to_room_cache:
             found_in_cache += 1
+            logger.info("💾 DM найден в БД: %s → %s", m, _mxid_to_room_cache[m])
             continue
         if m not in to_resolve:
             to_resolve.append(m)
@@ -108,7 +132,7 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
         return
 
     logger.info(
-        "🔗 Pre-warm DM: %d в кеше, %d нужно резолвить...",
+        "🔗 Pre-warm DM: %d в БД кеше, %d нужно резолвить...",
         found_in_cache, len(to_resolve),
     )
 
@@ -117,14 +141,16 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
     failed_count = 0
     need_create: list[str] = []
 
-    # Фаза 1: быстрый поиск среди уже загруженных комнат (без API-вызовов)
+    # Фаза 1: быстрый поиск среди загруженных комнат (без API-вызовов)
     bot_mxid = client.user_id
     for target_mxid in to_resolve:
         room_id = _find_existing_dm(client, target_mxid, bot_mxid)
         if room_id:
             _mxid_to_room_cache[target_mxid] = room_id
             found_count += 1
-            logger.info("🔗 DM найден: %s → %s", target_mxid, room_id)
+            logger.info("🔗 DM найден в rooms: %s → %s", target_mxid, room_id)
+            # Сохраняем в БД
+            await _save_to_db_cache(target_mxid, room_id)
         else:
             need_create.append(target_mxid)
 
@@ -142,6 +168,8 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
                 "✅ DM создан (%d/%d): %s → %s",
                 i + 1, len(need_create), target_mxid, room_id,
             )
+            # Сохраняем в БД
+            await _save_to_db_cache(target_mxid, room_id)
         except asyncio.TimeoutError:
             logger.warning("⏱ Pre-warm DM timeout: %s (пропуск)", target_mxid)
             failed_count += 1
@@ -422,6 +450,8 @@ async def _resolve_room_id(client: "AsyncClient", room_or_mxid: str) -> str:
     if room_id:
         logger.info("🔗 DM найден: %s → %s", target_mxid, room_id)
         _mxid_to_room_cache[target_mxid] = room_id
+        # Сохраняем в БД
+        await _save_to_db_cache(target_mxid, room_id)
         return room_id
 
     # Fallback: ищем через Matrix API напрямую
@@ -442,6 +472,8 @@ async def _resolve_room_id(client: "AsyncClient", room_or_mxid: str) -> str:
         )
         logger.info("✅ DM создан: %s → %s", target_mxid, new_room_id)
         _mxid_to_room_cache[target_mxid] = new_room_id
+        # Сохраняем в БД
+        await _save_to_db_cache(target_mxid, new_room_id)
         return new_room_id
     except asyncio.TimeoutError:
         _dm_failed.add(target_mxid)

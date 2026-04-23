@@ -381,6 +381,14 @@ async def main() -> None:
     client.user_id = MATRIX_USER_ID
     logger.info("✅ Matrix: клиент создан для %s", MATRIX_USER_ID)
 
+    # ── Инициализация кеша DM-комнат в БД ──
+    from bot.dm_cache import init_dm_cache_table, load_dm_cache
+    
+    async with session_factory() as session:
+        await init_dm_cache_table(session)
+        _mxid_to_room_cache = await load_dm_cache(session)
+        logger.info("💾 Загружен кеш DM из БД: %d записей", len(_mxid_to_room_cache))
+
     # ── Первичная синхронизация Matrix (нужна для поиска DM-комнат) ──
     logger.info("📡 Matrix: первичная синхронизация...")
     from nio import SyncError
@@ -464,22 +472,31 @@ async def main() -> None:
             if rooms_cache:
                 logger.info("🔄 Загружаем участников комнат для DM-резолва...")
                 loaded = 0
+                errors = 0
                 rooms_list = list(rooms_cache.items())
                 logger.info("  📋 rooms_cache.items() вернул %d элементов", len(rooms_list))
                 
-                for room_id, room_stub in rooms_list[:50]:  # Лимит 50 комнат
-                    logger.debug("    🔄 Загружаем members для %s", room_id)
+                for i, (room_id, room_stub) in enumerate(rooms_list[:50]):  # Лимит 50 комнат
                     try:
+                        logger.debug("    🔄 [%d/%d] Загружаем members для %s", i+1, min(50, len(rooms_list)), room_id)
                         members_resp = await client.room_members(room_id)
+                        logger.debug("      📋 members_resp type: %s", type(members_resp).__name__)
+                        
                         if hasattr(members_resp, 'members'):
                             member_ids = {m.user_id for m in members_resp.members if m.user_id}
+                            logger.debug("        👥 Найдено %d участников", len(member_ids))
                             room_stub.members = member_ids
                             room_stub.users = member_ids
                             room_stub.member_count = len(member_ids)
                             loaded += 1
+                        else:
+                            logger.debug("        ⚠ members_resp не имеет атрибута 'members'")
+                            errors += 1
                     except Exception as e:
-                        logger.debug("⚠ Не удалось загрузить members для %s: %s", room_id, e)
-                logger.info("✅ Загружены участники для %d комнат", loaded)
+                        logger.warning("⚠ Не удалось загрузить members для %s: %s (%s)", room_id, type(e).__name__, e)
+                        errors += 1
+                
+                logger.info("✅ Загружены участники для %d комнат, ошибок: %d", loaded, errors)
             
             logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
             
@@ -489,20 +506,24 @@ async def main() -> None:
         logger.debug("Traceback: %s", traceback.format_exc())
 
         # ── Pre-warm DM-комнат ──────────────────────────────────────────────────
-    from bot.sender import prewarm_dm_rooms
+    from bot.sender import prewarm_dm_rooms, set_db_session
 
-    all_mxids = []
-    for u_cfg in USERS:
-        room = (u_cfg.get("room") or "").strip()
-        if room:
-            all_mxids.append(room)
-        # group_room тоже может быть MXID
-        gr = (u_cfg.get("group_room") or "").strip()
-        if gr:
-            all_mxids.append(gr)
+    # Передаём сессию для сохранения кеша
+    async with session_factory() as session:
+        set_db_session(session)
+        
+        all_mxids = []
+        for u_cfg in USERS:
+            room = (u_cfg.get("room") or "").strip()
+            if room:
+                all_mxids.append(room)
+            # group_room тоже может быть MXID
+            gr = (u_cfg.get("group_room") or "").strip()
+            if gr:
+                all_mxids.append(gr)
 
-    if all_mxids:
-        await prewarm_dm_rooms(client, all_mxids)
+        if all_mxids:
+            await prewarm_dm_rooms(client, all_mxids)
 
     # ── Подключение к Redmine ──
     redmine = Redmine(REDMINE_URL, key=REDMINE_KEY)
