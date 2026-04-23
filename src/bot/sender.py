@@ -172,23 +172,31 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
 
 async def _fetch_joined_rooms_via_api(homeserver: str, access_token: str) -> list[str]:
     """Получает список комнат через Matrix API напрямую."""
-    url = f"{homeserver}/_matrix/client/v3/joined_rooms"
-    headers = {"Authorization": f"Bearer {access_token}"}
+    # Пробуем разные версии API
+    for version in ["v3", "r0", "v2"]:
+        url = f"{homeserver}/_matrix/client/{version}/joined_rooms"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        rooms = data.get("joined_rooms", [])
+                        logger.info("📋 API joined_rooms (%s): %d комнат", version, len(rooms))
+                        return rooms
+                    elif resp.status == 404:
+                        logger.debug("⚠ API %s вернул 404, пробуем другую версию", version)
+                        continue
+                    else:
+                        logger.warning("⚠ API joined_rooms (%s): status %d", version, resp.status)
+                        continue
+        except Exception as e:
+            logger.debug("⚠ API joined_rooms (%s) error: %s", version, e)
+            continue
     
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    rooms = data.get("joined_rooms", [])
-                    logger.info("📋 API joined_rooms: %d комнат", len(rooms))
-                    return rooms
-                else:
-                    logger.warning("⚠ API joined_rooms: status %d", resp.status)
-                    return []
-    except Exception as e:
-        logger.warning("⚠ API joined_rooms error: %s", e)
-        return []
+    logger.warning("⚠ Не удалось получить joined_rooms ни через одну версию API")
+    return []
 
 
 async def _fetch_room_members_via_api(homeserver: str, access_token: str, room_id: str) -> set[str]:
