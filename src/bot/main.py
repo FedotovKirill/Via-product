@@ -440,27 +440,35 @@ async def main() -> None:
                     rooms_count = len(sync_resp.rooms.join)
                     logger.info("  📊 sync_resp.rooms.join: %d комнат", rooms_count)
                     
-                    # Создаём отдельный кеш комнат (не перезаписываем client.rooms — это метод в nio)
-                    rooms_cache = {}
-                    for room_id in sync_resp.rooms.join.keys():
-                        class RoomStub:
-                            def __init__(self, rid):
-                                self.room_id = rid
-                                self.members = set()
-                                self.users = set()
-                                self.member_count = 0
-                        rooms_cache[room_id] = RoomStub(room_id)
-                    
-                    # Сохраняем кеш в client._rooms_cache
-                    client._rooms_cache = rooms_cache
-                    logger.info("✅ Rooms загружены из sync response в client._rooms_cache")
+            # Создаём отдельный кеш комнат (не перезаписываем client.rooms — это метод в nio)
+            rooms_cache = {}
+            for room_id in sync_resp.rooms.join.keys():
+                class RoomStub:
+                    def __init__(self, rid):
+                        self.room_id = rid
+                        self.members = set()
+                        self.users = set()
+                        self.member_count = 0
+                rooms_cache[room_id] = RoomStub(room_id)
+            
+            # Сохраняем кеш в client._rooms_cache
+            client._rooms_cache = rooms_cache
+            logger.info("✅ Rooms загружены из sync response в client._rooms_cache")
+            logger.info("  📊 client._rooms_cache type: %s, len: %d", type(rooms_cache), len(rooms_cache))
+            logger.info("  📋 Первые комнаты: %s", list(rooms_cache.keys())[:3])
             
             # Загружаем участников для каждой комнаты (критично для поиска DM)
             rooms_cache = getattr(client, '_rooms_cache', {})
+            logger.info("  🔍 rooms_cache для загрузки members: type=%s, len=%d", type(rooms_cache), len(rooms_cache))
+            
             if rooms_cache:
                 logger.info("🔄 Загружаем участников комнат для DM-резолва...")
                 loaded = 0
-                for room_id, room_stub in list(rooms_cache.items())[:50]:  # Лимит 50 комнат
+                rooms_list = list(rooms_cache.items())
+                logger.info("  📋 rooms_cache.items() вернул %d элементов", len(rooms_list))
+                
+                for room_id, room_stub in rooms_list[:50]:  # Лимит 50 комнат
+                    logger.debug("    🔄 Загружаем members для %s", room_id)
                     try:
                         members_resp = await client.room_members(room_id)
                         if hasattr(members_resp, 'members'):
