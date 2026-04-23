@@ -108,6 +108,7 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
             need_create.append(target_mxid)
 
     # Фаза 2: создание недостающих DM — по одному, с паузой
+    # ВАЖНО: ошибки не блокируют запуск бота
     for i, target_mxid in enumerate(need_create):
         try:
             room_id = await asyncio.wait_for(
@@ -125,44 +126,50 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
             failed_count += 1
         except Exception as e:
             error_msg = str(e)
-            if "429" in error_msg or "ratelimited" in error_msg.lower():
-                # Rate-limited — ждём дольше и пробуем дальше
-                logger.warning(
-                    "⚠ Rate-limited при создании DM %s, пауза 60с...", target_mxid,
-                )
-                await asyncio.sleep(60)
-                # Повторная попытка
-                try:
-                    room_id = await asyncio.wait_for(
-                        _create_dm(client, target_mxid),
-                        timeout=DM_CREATE_TIMEOUT,
-                    )
-                    _mxid_to_room_cache[target_mxid] = room_id
-                    created_count += 1
-                    logger.info("✅ DM создан (retry): %s → %s", target_mxid, room_id)
-                except Exception as retry_err:
-                    logger.warning("⚠ Pre-warm DM retry failed: %s — %s", target_mxid, retry_err)
-                    failed_count += 1
-            else:
-                logger.warning("⚠ Pre-warm DM ошибка: %s — %s", target_mxid, e)
-                failed_count += 1
+            # Игнорируем ошибки создания DM — бот продолжит работу
+            logger.warning("⚠ Pre-warm DM ошибка (не блокирующая): %s — %s", target_mxid, e)
+            failed_count += 1
 
         # Пауза между созданиями (не после последнего)
         if i < len(need_create) - 1:
             await asyncio.sleep(DM_CREATE_DELAY)
 
-    logger.info(
-        "✅ Pre-warm DM завершён: %d найдено, %d создано, %d неудачно (всего %d)",
-        found_count, created_count, failed_count, len(to_resolve),
-    )
+    if failed_count > 0:
+        logger.warning(
+            "⚠ Pre-warm DM завершён с ошибками: %d найдено, %d создано, %d неудачно. "
+            "Бот продолжит работу, DM будут созданы при первой отправке.",
+            found_count, created_count, failed_count,
+        )
+    else:
+        logger.info(
+            "✅ Pre-warm DM завершён: %d найдено, %d создано (всего %d)",
+            found_count, created_count, len(to_resolve),
+        )
     # Сбрасываем failed — при первом цикле попробуем ещё раз
     _dm_failed.clear()
 
 
 def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
     """Ищет существующую DM-комнату среди загруженных комнат. Не делает API-вызовов."""
-    # Проверяем rooms (nio client хранит комнаты здесь после sync)
+    # Проверяем rooms и joined_rooms (nio может хранить в разных местах)
     rooms_to_check = getattr(client, "rooms", {}) or {}
+    joined_rooms = getattr(client, "joined_rooms", None)
+
+    # Если joined_rooms это метод - вызываем его
+    if callable(joined_rooms):
+        try:
+            joined_rooms = joined_rooms()
+        except Exception:
+            joined_rooms = {}
+    
+    # Объединяем если есть оба
+    if joined_rooms and isinstance(joined_rooms, dict):
+        for r_id, room_obj in joined_rooms.items():
+            if r_id not in rooms_to_check:
+                rooms_to_check[r_id] = room_obj
+
+    logger.debug("🔍 _find_existing_dm: проверяем %d комнат, target=%s, bot=%s",
+                len(rooms_to_check), target_mxid, bot_mxid)
 
     for r_id, room_obj in rooms_to_check.items():
         members = set()
@@ -174,7 +181,9 @@ def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) ->
             # Для комнат без полной информации пропускаем
             continue
 
+        logger.debug("  📍 Комната %s: members=%d", r_id, len(members))
         if target_mxid in members and bot_mxid in members and len(members) == 2:
+            logger.info("✅ DM найден: %s", r_id)
             return r_id
 
     return None
@@ -207,21 +216,25 @@ async def _create_dm(client: "AsyncClient", target_mxid: str) -> str:
                     wait_s = (retry_ms / 1000) + 2  # +2с запас
                     if attempt < max_attempts:
                         logger.warning(
-                            "⚠ Rate-limited при создании DM %s (попытка %d/%d), "
-                            "ждём %.0fс...",
+                            "⚠ Rate-limited при создании DM %s (попытка %d/%d), ждём %.0fс...",
                             target_mxid, attempt, max_attempts, wait_s,
                         )
                         await asyncio.sleep(wait_s)
                         continue
 
-                # Другая ошибка при создании
-                logger.error("❌ Ошибка создания DM %s: %s (status=%s)", target_mxid, msg, status)
+                # Другая ошибка при создании — пробуем ещё раз
+                logger.debug("⚠ Ошибка создания DM %s: %s (status=%s, попытка %d/%d)",
+                            target_mxid, msg, status, attempt, max_attempts)
+                if attempt < max_attempts:
+                    await asyncio.sleep(3)
+                    continue
                 raise RuntimeError(f"Не удалось создать DM с {target_mxid}: {msg}")
 
         except Exception as e:
-            logger.error("❌ Исключение при создании DM %s (попытка %d/%d): %s", target_mxid, attempt, max_attempts, e)
+            logger.debug("⚠ Исключение при создании DM %s (попытка %d/%d): %s",
+                        target_mxid, attempt, max_attempts, e)
             if attempt < max_attempts:
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
                 continue
             raise
 
