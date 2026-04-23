@@ -88,7 +88,6 @@ services:
       - ./.env:/app/.env:ro
       # Синхронизация времени с хостом
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     working_dir: /app
     healthcheck:
       # Отдельный процесс импортирует модуль бота — проверка целостности образа и зависимостей.
@@ -173,7 +172,6 @@ services:
       - ./templates:/app/templates
       # Синхронизация времени с хостом
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
 
 volumes:
   postgres_data:
