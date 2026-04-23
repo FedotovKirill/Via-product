@@ -386,6 +386,18 @@ async def main() -> None:
     try:
         sync_resp = await client.sync(timeout=30000, full_state=True)
         
+        # Детальная отладка sync response
+        logger.info("  📋 sync_resp type: %s", type(sync_resp).__name__)
+        logger.info("  📋 sync_resp dir: %s", [a for a in dir(sync_resp) if not a.startswith('_')][:20])
+        
+        if hasattr(sync_resp, 'rooms'):
+            rooms_obj = sync_resp.rooms
+            logger.info("  📋 rooms type: %s", type(rooms_obj).__name__)
+            if hasattr(rooms_obj, 'join'):
+                logger.info("  📋 rooms.join type: %s, value: %s", type(rooms_obj.join), rooms_obj.join)
+                if rooms_obj.join:
+                    logger.info("  📋 rooms.join keys: %s", list(rooms_obj.join.keys())[:5])
+        
         # nio хранит комнаты в sync_resp.rooms.join
         rooms_count = 0
         if hasattr(sync_resp, 'rooms') and sync_resp.rooms:
@@ -420,6 +432,8 @@ async def main() -> None:
         logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
     except Exception as e:
         logger.warning("⚠ Matrix sync не удался (DM-резолв может не работать): %s", e)
+        import traceback
+        logger.debug("Traceback: %s", traceback.format_exc())
 
         # ── Pre-warm DM-комнат ──────────────────────────────────────────────────
     from bot.sender import prewarm_dm_rooms
