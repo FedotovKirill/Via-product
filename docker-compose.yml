@@ -146,7 +146,7 @@ services:
         "alembic upgrade head && exec uvicorn src.admin.main:app --host 0.0.0.0 --port 8080",
       ]
     ports:
-      - "${ADMIN_PORT:-8080}:8080"
+      - "10.81.86.82:${ADMIN_PORT:-8080}:8080"
     working_dir: /app
     user: bot
     healthcheck:
