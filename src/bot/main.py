@@ -383,55 +383,72 @@ async def main() -> None:
 
     # ── Первичная синхронизация Matrix (нужна для поиска DM-комнат) ──
     logger.info("📡 Matrix: первичная синхронизация...")
+    from nio import SyncError
+    
     try:
         sync_resp = await client.sync(timeout=30000, full_state=True)
         
-        # Детальная отладка sync response
-        logger.info("  📋 sync_resp type: %s", type(sync_resp).__name__)
-        logger.info("  📋 sync_resp dir: %s", [a for a in dir(sync_resp) if not a.startswith('_')][:20])
-        
-        if hasattr(sync_resp, 'rooms'):
-            rooms_obj = sync_resp.rooms
-            logger.info("  📋 rooms type: %s", type(rooms_obj).__name__)
-            if hasattr(rooms_obj, 'join'):
-                logger.info("  📋 rooms.join type: %s, value: %s", type(rooms_obj.join), rooms_obj.join)
-                if rooms_obj.join:
-                    logger.info("  📋 rooms.join keys: %s", list(rooms_obj.join.keys())[:5])
-        
-        # nio хранит комнаты в sync_resp.rooms.join
-        rooms_count = 0
-        if hasattr(sync_resp, 'rooms') and sync_resp.rooms:
-            if hasattr(sync_resp.rooms, 'join') and sync_resp.rooms.join:
-                rooms_count = len(sync_resp.rooms.join)
-                logger.info("  📊 sync_resp.rooms.join: %d комнат", rooms_count)
-                
-                # Кешируем в client.rooms для sender.py
-                for room_id in sync_resp.rooms.join.keys():
-                    class RoomStub:
-                        def __init__(self, rid):
-                            self.room_id = rid
-                            self.members = set()
-                            self.users = set()
-                            self.member_count = 0
-                    if not hasattr(client, 'rooms') or client.rooms is None:
-                        client.rooms = {}
-                    client.rooms[room_id] = RoomStub(room_id)
-                logger.info("✅ Rooms загружены из sync response в client.rooms")
-        
-        # Проверяем client.rooms
-        if hasattr(client, 'rooms') and client.rooms:
-            if callable(client.rooms):
-                try:
-                    r_count = len(client.rooms())
-                    logger.info("  📊 client.rooms(): %d", r_count)
-                except Exception:
-                    pass
-            elif isinstance(client.rooms, dict):
-                logger.info("  📊 client.rooms (dict): %d", len(client.rooms))
-        
-        logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
+        # Проверяем не ошибка ли это
+        if isinstance(sync_resp, SyncError):
+            logger.error("❌ Matrix SyncError: status=%d, message=%s", 
+                        sync_resp.status_code, sync_resp.message)
+            logger.info("  ℹ️ Это может означать что токен недействителен или сервер недоступен")
+            # Пробуем загрузить комнаты через API напрямую
+            logger.info("🔄 Пробуем загрузить комнаты через /joined_rooms API...")
+            try:
+                import aiohttp
+                url = f"{HOMESERVER}/_matrix/client/v3/joined_rooms"
+                headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, timeout=10) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            room_ids = data.get("joined_rooms", [])
+                            logger.info("✅ API вернул %d комнат", len(room_ids))
+                            # Кешируем
+                            for room_id in room_ids:
+                                class RoomStub:
+                                    def __init__(self, rid):
+                                        self.room_id = rid
+                                        self.members = set()
+                                        self.users = set()
+                                        self.member_count = 0
+                                if not hasattr(client, 'rooms') or client.rooms is None:
+                                    client.rooms = {}
+                                client.rooms[room_id] = RoomStub(room_id)
+                            logger.info("✅ Rooms загружены через API")
+                        else:
+                            logger.warning("⚠ API вернул status %d", resp.status)
+            except Exception as api_err:
+                logger.warning("⚠ API загрузка не удалась: %s", api_err)
+        else:
+            # Успешный sync
+            logger.info("  📋 sync_resp type: %s", type(sync_resp).__name__)
+            
+            # nio хранит комнаты в sync_resp.rooms.join
+            rooms_count = 0
+            if hasattr(sync_resp, 'rooms') and sync_resp.rooms:
+                if hasattr(sync_resp.rooms, 'join') and sync_resp.rooms.join:
+                    rooms_count = len(sync_resp.rooms.join)
+                    logger.info("  📊 sync_resp.rooms.join: %d комнат", rooms_count)
+                    
+                    # Кешируем в client.rooms для sender.py
+                    for room_id in sync_resp.rooms.join.keys():
+                        class RoomStub:
+                            def __init__(self, rid):
+                                self.room_id = rid
+                                self.members = set()
+                                self.users = set()
+                                self.member_count = 0
+                        if not hasattr(client, 'rooms') or client.rooms is None:
+                            client.rooms = {}
+                        client.rooms[room_id] = RoomStub(room_id)
+                    logger.info("✅ Rooms загружены из sync response в client.rooms")
+            
+            logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
+            
     except Exception as e:
-        logger.warning("⚠ Matrix sync не удался (DM-резолв может не работать): %s", e)
+        logger.warning("⚠ Matrix sync exception: %s", e)
         import traceback
         logger.debug("Traceback: %s", traceback.format_exc())
 
