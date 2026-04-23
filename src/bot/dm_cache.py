@@ -1,11 +1,14 @@
 """Кеш DM-комнат в БД."""
 
-from sqlalchemy import Column, Integer, String, DateTime, select
+from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import declarative_base, Session
 from datetime import datetime, timezone
 
+Base = declarative_base()
 
-class DmCache:
+
+class DmCache(Base):
     """Таблица для кеширования DM-комнат."""
     
     __tablename__ = "bot_dm_cache"
@@ -19,6 +22,8 @@ class DmCache:
 
 async def load_dm_cache(session: AsyncSession) -> dict[str, str]:
     """Загружает кеш DM из БД. Возвращает dict {mxid: room_id}."""
+    from sqlalchemy import select
+    
     result = await session.execute(select(DmCache))
     cache = {}
     for row in result.scalars():
@@ -28,7 +33,7 @@ async def load_dm_cache(session: AsyncSession) -> dict[str, str]:
 
 async def save_dm_cache(session: AsyncSession, mxid: str, room_id: str) -> None:
     """Сохраняет DM-комнату в кеш."""
-    from sqlalchemy import update, insert, exists
+    from sqlalchemy import update, insert, exists, select
     
     # Проверяем существует ли запись
     exists_stmt = select(exists().where(DmCache.user_mxid == mxid))
