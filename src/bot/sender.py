@@ -62,6 +62,26 @@ def reset_dm_failed() -> None:
     _dm_failed.clear()
 
 
+async def _load_rooms_via_api(client: "AsyncClient", homeserver: str, access_token: str) -> dict[str, any]:
+    """Загружает комнаты через Matrix API и кеширует в client.rooms."""
+    room_ids = await _fetch_joined_rooms_via_api(homeserver, access_token)
+    rooms_dict = {}
+    
+    for room_id in room_ids:
+        members = await _fetch_room_members_via_api(homeserver, access_token, room_id)
+        # Создаём простой объект-заглушку
+        class RoomStub:
+            def __init__(self, rid, mbrs):
+                self.room_id = rid
+                self.members = mbrs
+                self.users = mbrs
+                self.member_count = len(mbrs)
+        rooms_dict[room_id] = RoomStub(room_id, members)
+    
+    logger.info("📦 Загружено %d комнат через API", len(rooms_dict))
+    return rooms_dict
+
+
 async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
     """Предварительное создание/поиск DM-комнат для списка MXID.
 

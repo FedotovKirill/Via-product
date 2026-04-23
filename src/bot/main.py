@@ -401,6 +401,19 @@ async def main() -> None:
     except Exception as e:
         logger.warning("⚠ Matrix sync не удался (DM-резолв может не работать): %s", e)
 
+    # Fallback: загружаем комнаты через API если sync не вернул комнаты
+    if rooms_count == 0:
+        logger.info("🔄 Matrix sync не вернул комнаты, загружаем через API...")
+        try:
+            from bot.sender import _load_rooms_via_api
+            api_rooms = await _load_rooms_via_api(client, HOMESERVER, ACCESS_TOKEN)
+            # Кешируем в client.rooms
+            if api_rooms:
+                client.rooms = api_rooms
+                logger.info("✅ Загружено %d комнат через API", len(api_rooms))
+        except Exception as e:
+            logger.warning("⚠ API загрузка комнат не удалась: %s", e)
+
         # ── Pre-warm DM-комнат ──────────────────────────────────────────────────
     from bot.sender import prewarm_dm_rooms
 
