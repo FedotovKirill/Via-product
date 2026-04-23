@@ -6,6 +6,7 @@ Create Date: 2026-04-08
 """
 
 import sqlalchemy as sa
+from sqlalchemy import Index
 
 from alembic import op
 
@@ -14,12 +15,12 @@ down_revision: str | None = "0016_bot_heartbeat"
 
 
 def upgrade() -> None:
-    # Redmine statuses
     op.create_table(
         "redmine_statuses",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("redmine_status_id", sa.Integer(), unique=True, nullable=False, index=True),
         sa.Column("name", sa.String(255), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"),
         sa.Column("is_default", sa.Boolean(), nullable=False, server_default="0"),
         sa.Column("is_closed", sa.Boolean(), nullable=False, server_default="0"),
         sa.Column(
@@ -30,6 +31,7 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
+    op.create_index(op.f("ix_redmine_statuses_is_active"), "redmine_statuses", ["is_active"], unique=False)
 
     # Notification types
     op.create_table(
