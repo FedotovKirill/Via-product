@@ -65,7 +65,24 @@ async def check_user_issues(
             params["updated_on"] = f">={last_check.isoformat()}"
 
         # redminelib — синхронная, выносим в thread чтобы не блокировать event loop
-        issues = await run_in_thread(lambda: list(redmine.issue.filter(**params)))
+        try:
+            issues = await run_in_thread(lambda: list(redmine.issue.filter(**params)))
+        except Exception as parse_err:
+            # Ловим ошибки парсинга дат от redminelib
+            error_msg = str(parse_err).lower()
+            if "обновлено" in error_msg or "updated" in error_msg or "date" in error_msg:
+                # Пробуем без фильтра updated_on
+                logger.warning(
+                    "⚠ Redmine: проблема с датой обновления, загружаем все задачи (user %s)", uid
+                )
+                params_no_filter = {
+                    "assigned_to_id": uid,
+                    "status_id": "open",
+                    "include": ["journals"],
+                }
+                issues = await run_in_thread(lambda: list(redmine.issue.filter(**params_no_filter)))
+            else:
+                raise
 
         if last_check:
             logger.info(

@@ -79,11 +79,16 @@ services:
       # В clean-code режиме бот всегда читает конфиг и state из Postgres.
       # Логирование в файл включено по умолчанию.
       LOG_TO_FILE: "1"
+      # Синхронизация времени с хостом (критично для Matrix sync)
+      TZ: Europe/Moscow
     volumes:
       # Логи bot.log (см. bot.py: data_dir) — переживают обновления образа.
       - ./data:/app/data
       # Явная подстановка .env в рабочий каталог для python-dotenv (load_dotenv).
       - ./.env:/app/.env:ro
+      # Синхронизация времени с хостом
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     working_dir: /app
     healthcheck:
       # Отдельный процесс импортирует модуль бота — проверка целостности образа и зависимостей.
@@ -141,6 +146,8 @@ services:
       DOCKER_HOST: ${DOCKER_HOST:-tcp://docker-socket-proxy:2375}
       DOCKER_TARGET_SERVICE: ${DOCKER_TARGET_SERVICE:-bot}
       BOT_RUNTIME_STATUS_FILE: ${BOT_RUNTIME_STATUS_FILE:-/app/data/runtime_status.json}
+      # Синхронизация времени с хостом
+      TZ: Europe/Moscow
     command:
       [
         "sh",
@@ -164,6 +171,9 @@ services:
       - ./.env:/app/.env
       # Монтируем шаблоны для быстрой разработки (без пересборки образа).
       - ./templates:/app/templates
+      # Синхронизация времени с хостом
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
 volumes:
   postgres_data:

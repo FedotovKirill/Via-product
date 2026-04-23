@@ -9,6 +9,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+import aiohttp
 from jinja2 import Environment, FileSystemLoader
 
 from matrix_send import room_send_with_retry
@@ -149,6 +150,78 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
     _dm_failed.clear()
 
 
+async def _fetch_joined_rooms_via_api(homeserver: str, access_token: str) -> list[str]:
+    """Получает список комнат через Matrix API напрямую."""
+    url = f"{homeserver}/_matrix/client/v3/joined_rooms"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    rooms = data.get("joined_rooms", [])
+                    logger.info("📋 API joined_rooms: %d комнат", len(rooms))
+                    return rooms
+                else:
+                    logger.warning("⚠ API joined_rooms: status %d", resp.status)
+                    return []
+    except Exception as e:
+        logger.warning("⚠ API joined_rooms error: %s", e)
+        return []
+
+
+async def _fetch_room_members_via_api(homeserver: str, access_token: str, room_id: str) -> set[str]:
+    """Получает список участников комнаты через Matrix API."""
+    url = f"{homeserver}/_matrix/client/v3/rooms/{room_id}/members"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    chunk = data.get("chunk", [])
+                    members = {m.get("user_id") for m in chunk if m.get("user_id")}
+                    logger.debug("📋 API room %s members: %d", room_id, len(members))
+                    return members
+                else:
+                    logger.debug("⚠ API room members: status %d", resp.status)
+                    return set()
+    except Exception as e:
+        logger.debug("⚠ API room members error: %s", e)
+        return set()
+
+
+async def _find_dm_via_api(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
+    """Ищет DM через Matrix API напрямую."""
+    # Импортируем из main.py где заполняются переменные при старте
+    try:
+        from bot.main import ACCESS_TOKEN, HOMESERVER
+    except ImportError:
+        logger.warning("⚠ Не удалось импортировать HOMESERVER/ACCESS_TOKEN из main")
+        return None
+    
+    homeserver = HOMESERVER
+    access_token = ACCESS_TOKEN
+    
+    if not homeserver or not access_token:
+        logger.warning("⚠ Homeserver или access_token пустые")
+        return None
+    
+    # Получаем список комнат
+    room_ids = await _fetch_joined_rooms_via_api(homeserver, access_token)
+    
+    # Для каждой комнаты проверяем участников
+    for room_id in room_ids:
+        members = await _fetch_room_members_via_api(homeserver, access_token, room_id)
+        if target_mxid in members and bot_mxid in members and len(members) == 2:
+            logger.info("✅ DM найден через API: %s", room_id)
+            return room_id
+    
+    return None
+
+
 def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
     """Ищет существующую DM-комнату среди загруженных комнат. Не делает API-вызовов."""
     # Проверяем rooms (nio хранит комнаты здесь после sync)
@@ -274,10 +347,18 @@ async def _resolve_room_id(client: "AsyncClient", room_or_mxid: str) -> str:
 
     logger.info("📊 Matrix rooms debug: rooms=%d", len(client.rooms or {}))
 
-    # Ищем существующую DM-комнату
+    # Ищем существующую DM-комнату через client.rooms
     room_id = _find_existing_dm(client, target_mxid, bot_mxid)
     if room_id:
         logger.info("🔗 DM найден: %s → %s", target_mxid, room_id)
+        _mxid_to_room_cache[target_mxid] = room_id
+        return room_id
+
+    # Fallback: ищем через Matrix API напрямую
+    logger.info("🔍 DM не найден в rooms, пробуем API...")
+    room_id = await _find_dm_via_api(client, target_mxid, bot_mxid)
+    if room_id:
+        logger.info("🔗 DM найден через API: %s → %s", target_mxid, room_id)
         _mxid_to_room_cache[target_mxid] = room_id
         return room_id
 
