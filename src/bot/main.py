@@ -390,17 +390,20 @@ async def main() -> None:
         
         # Проверяем не ошибка ли это
         if isinstance(sync_resp, SyncError):
-            logger.error("❌ Matrix SyncError: status=%d, message=%s", 
-                        sync_resp.status_code, sync_resp.message)
+            status = sync_resp.status_code if sync_resp.status_code else "unknown"
+            logger.error("❌ Matrix SyncError: status=%s, message=%s", 
+                        status, sync_resp.message)
             logger.info("  ℹ️ Это может означать что токен недействителен или сервер недоступен")
             # Пробуем загрузить комнаты через API напрямую
             logger.info("🔄 Пробуем загрузить комнаты через /joined_rooms API...")
+            logger.info("  🔍 URL: %s/_matrix/client/v3/joined_rooms", HOMESERVER)
             try:
                 import aiohttp
                 url = f"{HOMESERVER}/_matrix/client/v3/joined_rooms"
                 headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, headers=headers, timeout=10) as resp:
+                        logger.info("  📋 API response status: %d", resp.status)
                         if resp.status == 200:
                             data = await resp.json()
                             room_ids = data.get("joined_rooms", [])
@@ -419,8 +422,11 @@ async def main() -> None:
                             logger.info("✅ Rooms загружены через API")
                         else:
                             logger.warning("⚠ API вернул status %d", resp.status)
+                            error_body = await resp.text()
+                            logger.debug("  📄 Error body: %s", error_body[:200])
             except Exception as api_err:
-                logger.warning("⚠ API загрузка не удалась: %s", api_err)
+                logger.error("⚠ API загрузка не удалась: %s", type(api_err).__name__)
+                logger.error("  💬 %s", api_err)
         else:
             # Успешный sync
             logger.info("  📋 sync_resp type: %s", type(sync_resp).__name__)
