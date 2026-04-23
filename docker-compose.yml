@@ -53,9 +53,8 @@ services:
       start_period: 10s
     # Порт наружу не пробрасываем по умолчанию (БД только для сети compose).
     # Для отладки с хоста публикуем только на localhost (DBeaver на ноуте).
-    # С network_mode: host для бота нужно открыть на всех интерфейсах
     ports:
-      - "0.0.0.0:5433:5432"
+      - "127.0.0.1:5433:5432"
 
   # ---------------------------------------------------------------------------
   # Бот: собирается из Dockerfile в этом репозитории.
@@ -76,8 +75,7 @@ services:
       # Важно: пароль может содержать зарезервированные URL-символы (например `]`, `/`, `+`),
       # поэтому используем URL-encoded версию, чтобы asyncpg/SQLAlchemy корректно распарсили DSN.
       # Если POSTGRES_PASSWORD_URLENC не задан — откат на raw.
-      # С network_mode: host используем host.docker.internal для доступа к БД
-      DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD_URLENC:-${POSTGRES_PASSWORD}}@host.docker.internal:5433/${POSTGRES_DB:-via}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD_URLENC:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-via}
       # В clean-code режиме бот всегда читает конфиг и state из Postgres.
       # Логирование в файл включено по умолчанию.
       LOG_TO_FILE: "1"
@@ -91,11 +89,6 @@ services:
       # Синхронизация времени с хостом
       - /etc/localtime:/etc/localtime:ro
     working_dir: /app
-    # Сеть хоста для доступа к внешнему Matrix-серверу
-    network_mode: host
-    extra_hosts:
-      # Доступ к БД на хосте (порт 5433 проброшен из postgres контейнера)
-      - "host.docker.internal:host-gateway"
     healthcheck:
       # Отдельный процесс импортирует модуль бота — проверка целостности образа и зависимостей.
       test: ["CMD", "python", "-c", "import src.bot.main"]

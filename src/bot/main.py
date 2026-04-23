@@ -385,34 +385,44 @@ async def main() -> None:
     logger.info("📡 Matrix: первичная синхронизация...")
     try:
         sync_resp = await client.sync(timeout=30000, full_state=True)
-        # Проверяем rooms корректно (может быть method или dict)
-        rooms_attr = getattr(client, "rooms", None)
-        if callable(rooms_attr):
-            try:
-                rooms_dict = rooms_attr()
-                rooms_count = len(rooms_dict) if rooms_dict else 0
-            except Exception:
-                rooms_count = 0
-        else:
-            rooms_count = len(rooms_attr) if rooms_attr else 0
         
-        logger.info("✅ Matrix sync: %d комнат загружено", rooms_count)
-        logger.debug("📋 sync response type: %s", type(sync_resp))
+        # nio хранит комнаты в разных атрибутах — проверяем все
+        rooms_count = 0
+        for attr_name in ['rooms', 'joined_rooms', 'invited_rooms', 'left_rooms']:
+            attr = getattr(client, attr_name, None)
+            if attr:
+                if callable(attr):
+                    try:
+                        count = len(attr())
+                    except Exception:
+                        count = 0
+                elif isinstance(attr, dict):
+                    count = len(attr)
+                else:
+                    count = 0
+                logger.info("  📊 client.%s: %d", attr_name, count)
+                rooms_count += count
+        
+        # Если rooms пустой но sync успешен — используем sync_resp
+        if rooms_count == 0 and sync_resp:
+            if hasattr(sync_resp, 'rooms') and sync_resp.rooms:
+                if hasattr(sync_resp.rooms, 'join') and sync_resp.rooms.join:
+                    rooms_count = len(sync_resp.rooms.join)
+                    logger.info("  📊 sync_resp.rooms.join: %d", rooms_count)
+                    # Кешируем из sync response
+                    for room_id in sync_resp.rooms.join.keys():
+                        class RoomStub:
+                            def __init__(self, rid):
+                                self.room_id = rid
+                                self.members = set()
+                                self.users = set()
+                                self.member_count = 0
+                        client.rooms[room_id] = RoomStub(room_id)
+                    logger.info("✅ Rooms загружены из sync response")
+        
+        logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
     except Exception as e:
         logger.warning("⚠ Matrix sync не удался (DM-резолв может не работать): %s", e)
-
-    # Fallback: загружаем комнаты через API если sync не вернул комнаты
-    if rooms_count == 0:
-        logger.info("🔄 Matrix sync не вернул комнаты, загружаем через API...")
-        try:
-            from bot.sender import _load_rooms_via_api
-            api_rooms = await _load_rooms_via_api(client, HOMESERVER, ACCESS_TOKEN)
-            # Кешируем в client.rooms
-            if api_rooms:
-                client.rooms = api_rooms
-                logger.info("✅ Загружено %d комнат через API", len(api_rooms))
-        except Exception as e:
-            logger.warning("⚠ API загрузка комнат не удалась: %s", e)
 
         # ── Pre-warm DM-комнат ──────────────────────────────────────────────────
     from bot.sender import prewarm_dm_rooms
