@@ -77,6 +77,8 @@ services:
       # Если POSTGRES_PASSWORD_URLENC не задан — откат на raw.
       DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD_URLENC:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-via}
       # В clean-code режиме бот всегда читает конфиг и state из Postgres.
+      # Логирование в файл включено по умолчанию.
+      LOG_TO_FILE: "1"
     volumes:
       # Логи bot.log (см. bot.py: data_dir) — переживают обновления образа.
       - ./data:/app/data

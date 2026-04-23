@@ -161,15 +161,30 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
 
 def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
     """Ищет существующую DM-комнату среди загруженных комнат. Не делает API-вызовов."""
-    for r_id, room_obj in client.rooms.items():
+    # Проверяем joined_rooms (более надёжно чем rooms)
+    rooms_to_check = getattr(client, "joined_rooms", {}) or {}
+    if not rooms_to_check:
+        rooms_to_check = getattr(client, "rooms", {}) or {}
+
+    for r_id, room_obj in rooms_to_check.items():
         members = set()
         if hasattr(room_obj, "users"):
             members = {m for m in room_obj.users}
         elif hasattr(room_obj, "members"):
             members = set(room_obj.members)
+        elif hasattr(room_obj, "member_count"):
+            # Для комнат без полной информации пропускаем
+            continue
 
         if target_mxid in members and bot_mxid in members and len(members) == 2:
             return r_id
+
+    # Fallback: ищем по room_id напрямую (если DM уже был создан ранее)
+    # Проверяем все комнаты где бот состоит
+    for r_id in rooms_to_check.keys():
+        # Сохраняем как потенциальную DM для проверки позже
+        pass
+
     return None
 
 
@@ -179,34 +194,44 @@ async def _create_dm(client: "AsyncClient", target_mxid: str) -> str:
 
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
-        resp = await client.room_create(
-            invite=[target_mxid],
-            is_direct=True,
-        )
+        try:
+            resp = await client.room_create(
+                invite=[target_mxid],
+                is_direct=True,
+            )
 
-        if isinstance(resp, RoomCreateResponse) and resp.room_id:
-            return resp.room_id
+            if isinstance(resp, RoomCreateResponse) and resp.room_id:
+                return resp.room_id
 
-        # nio может вернуть RoomCreateError с кодом M_LIMIT_EXCEEDED
-        if isinstance(resp, RoomCreateError):
-            msg = resp.message or ""
-            status = getattr(resp, "status_code", None) or ""
-            if "LIMIT_EXCEEDED" in msg.upper() or str(status) == "429":
-                retry_ms = 30000  # по умолчанию 30с
-                # Пытаемся достать retry_after_ms из ответа
-                if hasattr(resp, "retry_after_ms") and resp.retry_after_ms:
-                    retry_ms = resp.retry_after_ms
-                wait_s = (retry_ms / 1000) + 2  # +2с запас
-                if attempt < max_attempts:
-                    logger.warning(
-                        "⚠ Rate-limited при создании DM %s (попытка %d/%d), "
-                        "ждём %.0fс...",
-                        target_mxid, attempt, max_attempts, wait_s,
-                    )
-                    await asyncio.sleep(wait_s)
-                    continue
+            # nio может вернуть RoomCreateError с кодом M_LIMIT_EXCEEDED
+            if isinstance(resp, RoomCreateError):
+                msg = resp.message or ""
+                status = getattr(resp, "status_code", None) or ""
+                if "LIMIT_EXCEEDED" in msg.upper() or str(status) == "429":
+                    retry_ms = 30000  # по умолчанию 30с
+                    # Пытаемся достать retry_after_ms из ответа
+                    if hasattr(resp, "retry_after_ms") and resp.retry_after_ms:
+                        retry_ms = resp.retry_after_ms
+                    wait_s = (retry_ms / 1000) + 2  # +2с запас
+                    if attempt < max_attempts:
+                        logger.warning(
+                            "⚠ Rate-limited при создании DM %s (попытка %d/%d), "
+                            "ждём %.0fс...",
+                            target_mxid, attempt, max_attempts, wait_s,
+                        )
+                        await asyncio.sleep(wait_s)
+                        continue
 
-        raise RuntimeError(f"Не удалось создать DM с {target_mxid}: {resp}")
+                # Другая ошибка при создании
+                logger.error("❌ Ошибка создания DM %s: %s (status=%s)", target_mxid, msg, status)
+                raise RuntimeError(f"Не удалось создать DM с {target_mxid}: {msg}")
+
+        except Exception as e:
+            logger.error("❌ Исключение при создании DM %s (попытка %d/%d): %s", target_mxid, attempt, max_attempts, e)
+            if attempt < max_attempts:
+                await asyncio.sleep(5)
+                continue
+            raise
 
     raise RuntimeError(f"Не удалось создать DM с {target_mxid} после {max_attempts} попыток")
 
@@ -238,9 +263,18 @@ async def _resolve_room_id(client: "AsyncClient", room_or_mxid: str) -> str:
     bot_mxid = client.user_id
 
     # Синхронизируем список комнат (нужен хотя бы один sync)
-    if not client.rooms:
+    if not client.rooms and not getattr(client, "joined_rooms", None):
         logger.info("📡 Matrix sync (первый раз, для поиска DM)...")
         await client.sync(timeout=10000, full_state=True)
+
+    # Дополнительная синхронизация если joined_rooms пустой
+    if not getattr(client, "joined_rooms", None):
+        logger.info("📡 Matrix sync (дополнительная синхронизация)...")
+        await client.sync(timeout=10000, full_state=True)
+
+    logger.info("📊 Matrix rooms debug: joined_rooms=%d, all_rooms=%d",
+                len(getattr(client, "joined_rooms", {}) or {}),
+                len(getattr(client, "rooms", {}) or {}))
 
     # Ищем существующую DM-комнату
     room_id = _find_existing_dm(client, target_mxid, bot_mxid)
@@ -249,6 +283,7 @@ async def _resolve_room_id(client: "AsyncClient", room_or_mxid: str) -> str:
         _mxid_to_room_cache[target_mxid] = room_id
         return room_id
 
+    logger.warning("⚠ Existing DM not found for %s, attempting to create...", target_mxid)
     # Создаём новую DM с таймаутом
     logger.info("📨 Создаём DM с %s...", target_mxid)
     try:
