@@ -453,6 +453,23 @@ async def main() -> None:
                         client.rooms[room_id] = RoomStub(room_id)
                     logger.info("✅ Rooms загружены из sync response в client.rooms")
             
+            # Загружаем участников для каждой комнаты (критично для поиска DM)
+            if rooms_count > 0:
+                logger.info("🔄 Загружаем участников комнат для DM-резолва...")
+                loaded = 0
+                for room_id, room_stub in list(client.rooms.items())[:50]:  # Лимит 50 комнат
+                    try:
+                        members_resp = await client.room_members(room_id)
+                        if hasattr(members_resp, 'members'):
+                            member_ids = {m.user_id for m in members_resp.members if m.user_id}
+                            room_stub.members = member_ids
+                            room_stub.users = member_ids
+                            room_stub.member_count = len(member_ids)
+                            loaded += 1
+                    except Exception as e:
+                        logger.debug("⚠ Не удалось загрузить members для %s: %s", room_id, e)
+                logger.info("✅ Загружены участники для %d комнат", loaded)
+            
             logger.info("✅ Matrix sync: всего %d комнат", rooms_count)
             
     except Exception as e:

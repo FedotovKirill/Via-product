@@ -279,21 +279,43 @@ def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) ->
     logger.debug("🔍 _find_existing_dm: проверяем %d комнат, target=%s, bot=%s",
                 len(rooms_to_check), target_mxid, bot_mxid)
 
+    found_with_members = 0
     for r_id, room_obj in rooms_to_check.items():
         members = set()
         if hasattr(room_obj, "users"):
-            members = {m for m in room_obj.users}
+            users_attr = room_obj.users
+            # Если users это метод - вызываем
+            if callable(users_attr):
+                try:
+                    members = {m for m in users_attr()}
+                except Exception:
+                    members = set()
+            else:
+                members = {m for m in (users_attr or set())}
         elif hasattr(room_obj, "members"):
-            members = set(room_obj.members)
-        elif hasattr(room_obj, "member_count"):
-            # Для комнат без полной информации пропускаем
-            continue
-
-        logger.debug("  📍 Комната %s: members=%d", r_id, len(members))
-        if target_mxid in members and bot_mxid in members and len(members) == 2:
+            members_attr = room_obj.members
+            # Если members это метод - вызываем
+            if callable(members_attr):
+                try:
+                    members = {m for m in members_attr()}
+                except Exception:
+                    members = set()
+            else:
+                members = set(members_attr or set())
+        
+        # Считаем только валидные MXID
+        valid_members = {m for m in members if m and isinstance(m, str) and m.startswith('@')}
+        
+        if valid_members:
+            found_with_members += 1
+            logger.debug("  📍 Комната %s: members=%d (валидных: %d)", r_id, len(members), len(valid_members))
+            logger.debug("     Участники: %s", list(valid_members)[:5])
+        
+        if target_mxid in valid_members and bot_mxid in valid_members and len(valid_members) == 2:
             logger.info("✅ DM найден: %s", r_id)
             return r_id
 
+    logger.debug("📊 Всего комнат с участниками: %d из %d", found_with_members, len(rooms_to_check))
     return None
 
 
