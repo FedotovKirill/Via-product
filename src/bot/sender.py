@@ -151,22 +151,17 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
 
 def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
     """Ищет существующую DM-комнату среди загруженных комнат. Не делает API-вызовов."""
-    # Проверяем rooms и joined_rooms (nio может хранить в разных местах)
-    rooms_to_check = getattr(client, "rooms", {}) or {}
-    joined_rooms = getattr(client, "joined_rooms", None)
-
-    # Если joined_rooms это метод - вызываем его
-    if callable(joined_rooms):
-        try:
-            joined_rooms = joined_rooms()
-        except Exception:
-            joined_rooms = {}
+    # Проверяем rooms (nio хранит комнаты здесь после sync)
+    rooms_attr = getattr(client, "rooms", None)
     
-    # Объединяем если есть оба
-    if joined_rooms and isinstance(joined_rooms, dict):
-        for r_id, room_obj in joined_rooms.items():
-            if r_id not in rooms_to_check:
-                rooms_to_check[r_id] = room_obj
+    # Если rooms это метод - вызываем его
+    if callable(rooms_attr):
+        try:
+            rooms_to_check = rooms_attr()
+        except Exception:
+            rooms_to_check = {}
+    else:
+        rooms_to_check = rooms_attr or {}
 
     logger.debug("🔍 _find_existing_dm: проверяем %d комнат, target=%s, bot=%s",
                 len(rooms_to_check), target_mxid, bot_mxid)

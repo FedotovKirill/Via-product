@@ -385,11 +385,19 @@ async def main() -> None:
     logger.info("📡 Matrix: первичная синхронизация...")
     try:
         sync_resp = await client.sync(timeout=30000, full_state=True)
-        # Проверяем разные атрибуты для отладки
-        rooms_count = len(getattr(client, "rooms", {}) or {})
-        joined_count = len(getattr(client, "joined_rooms", {}) or {})
-        logger.info("✅ Matrix sync: rooms=%d, joined_rooms=%d", rooms_count, joined_count)
-        logger.debug("📋 sync response: %s", sync_resp)
+        # Проверяем rooms корректно (может быть method или dict)
+        rooms_attr = getattr(client, "rooms", None)
+        if callable(rooms_attr):
+            try:
+                rooms_dict = rooms_attr()
+                rooms_count = len(rooms_dict) if rooms_dict else 0
+            except Exception:
+                rooms_count = 0
+        else:
+            rooms_count = len(rooms_attr) if rooms_attr else 0
+        
+        logger.info("✅ Matrix sync: %d комнат загружено", rooms_count)
+        logger.debug("📋 sync response type: %s", type(sync_resp))
     except Exception as e:
         logger.warning("⚠ Matrix sync не удался (DM-резолв может не работать): %s", e)
 
