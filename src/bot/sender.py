@@ -161,10 +161,8 @@ async def prewarm_dm_rooms(client: "AsyncClient", mxids: list[str]) -> None:
 
 def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) -> str | None:
     """Ищет существующую DM-комнату среди загруженных комнат. Не делает API-вызовов."""
-    # Проверяем joined_rooms (более надёжно чем rooms)
-    rooms_to_check = getattr(client, "joined_rooms", {}) or {}
-    if not rooms_to_check:
-        rooms_to_check = getattr(client, "rooms", {}) or {}
+    # Проверяем rooms (nio client хранит комнаты здесь после sync)
+    rooms_to_check = getattr(client, "rooms", {}) or {}
 
     for r_id, room_obj in rooms_to_check.items():
         members = set()
@@ -178,12 +176,6 @@ def _find_existing_dm(client: "AsyncClient", target_mxid: str, bot_mxid: str) ->
 
         if target_mxid in members and bot_mxid in members and len(members) == 2:
             return r_id
-
-    # Fallback: ищем по room_id напрямую (если DM уже был создан ранее)
-    # Проверяем все комнаты где бот состоит
-    for r_id in rooms_to_check.keys():
-        # Сохраняем как потенциальную DM для проверки позже
-        pass
 
     return None
 
@@ -263,18 +255,16 @@ async def _resolve_room_id(client: "AsyncClient", room_or_mxid: str) -> str:
     bot_mxid = client.user_id
 
     # Синхронизируем список комнат (нужен хотя бы один sync)
-    if not client.rooms and not getattr(client, "joined_rooms", None):
+    if not client.rooms:
         logger.info("📡 Matrix sync (первый раз, для поиска DM)...")
         await client.sync(timeout=10000, full_state=True)
 
-    # Дополнительная синхронизация если joined_rooms пустой
-    if not getattr(client, "joined_rooms", None):
+    # Дополнительная синхронизация если rooms пустой
+    if not client.rooms:
         logger.info("📡 Matrix sync (дополнительная синхронизация)...")
         await client.sync(timeout=10000, full_state=True)
 
-    logger.info("📊 Matrix rooms debug: joined_rooms=%d, all_rooms=%d",
-                len(getattr(client, "joined_rooms", {}) or {}),
-                len(getattr(client, "rooms", {}) or {}))
+    logger.info("📊 Matrix rooms debug: rooms=%d", len(client.rooms or {}))
 
     # Ищем существующую DM-комнату
     room_id = _find_existing_dm(client, target_mxid, bot_mxid)
